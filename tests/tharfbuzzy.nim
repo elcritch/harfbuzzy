@@ -1,4 +1,4 @@
-import std/[os, unittest]
+import std/[os, strutils, unittest]
 
 import harfbuzzy
 import harfbuzzy/fribidi_raw
@@ -200,6 +200,62 @@ suite "harfbuzzy wrapper":
         check glyph.cluster < uint32(run.textRun.byteEnd)
     check hasRtl
 
+  test "shape context chooses fallback fonts per run":
+    check fileExists(fixtureFont)
+    check fileExists(arabicFixtureFont)
+    let latinTypeface = typefaceFromFile(fixtureFont)
+    let arabicTypeface = typefaceFromFile(arabicFixtureFont)
+    let context = initShapeContext(latinTypeface, [arabicTypeface])
+    let text = "abc " & arabicText
+    let paragraph = context.shapeParagraph(text)
+
+    check paragraph.logicalRuns.len >= 2
+    var sawPrimary = false
+    var sawFallback = false
+    for run in paragraph.logicalRuns:
+      if $run.textRun.script == "Latn":
+        sawPrimary = sawPrimary or run.typefaceIndex == 0
+      if $run.textRun.script == "Arab":
+        sawFallback = sawFallback or run.typefaceIndex == 1
+      check not run.hasMissingGlyphs
+    check sawPrimary
+    check sawFallback
+
+  test "font fallback callback can override selection":
+    proc chooseFallback(text: string, run: TextRun, typefaces: seq[Typeface]): int =
+      discard text
+      discard run
+      if typefaces.len > 1: 1 else: 0
+
+    check fileExists(fixtureFont)
+    check fileExists(arabicFixtureFont)
+    let context = initShapeContext(
+      [typefaceFromFile(fixtureFont), typefaceFromFile(arabicFixtureFont)],
+      fallback = chooseFallback,
+    )
+    let paragraph = context.shapeParagraph("hello")
+
+    check paragraph.logicalRuns.len == 1
+    check paragraph.logicalRuns[0].typefaceIndex == 1
+
+  test "source and visual logical mapping helpers are stable":
+    check fileExists(arabicFixtureFont)
+    let typeface = typefaceFromFile(arabicFixtureFont)
+    let text = "abc " & arabicText & " xyz"
+    let paragraph = typeface.shapeParagraph(text)
+
+    check paragraph.visualToLogicalMap.len == paragraph.visualRuns.len
+    check paragraph.logicalToVisualMap.len == paragraph.logicalRuns.len
+    for logicalIndex in 0 ..< paragraph.logicalRuns.len:
+      let visualIndex = paragraph.visualRunIndex(logicalIndex)
+      check paragraph.logicalRunIndex(visualIndex) == logicalIndex
+
+    let runRange = paragraph.glyphRangeForByte(0)
+    check runRange.runIndex >= 0
+    check runRange.glyphEnd > runRange.glyphStart
+    let glyphRange = paragraph.logicalRuns[0].glyphRangeForCodepoint(text, 0)
+    check glyphRange.glyphEnd > glyphRange.glyphStart
+
   test "rtl paragraph with digits and neutral punctuation shapes visually":
     check fileExists(arabicFixtureFont)
     let typeface = typefaceFromFile(arabicFixtureFont)
@@ -211,6 +267,20 @@ suite "harfbuzzy wrapper":
     check paragraph.logicalRuns.len >= 2
     check paragraph.visualRuns.len == paragraph.logicalRuns.len
     check paragraph.totalAdvance.x > 0
+
+  test "paragraph shaping handles edge-case inputs deterministically":
+    check fileExists(arabicFixtureFont)
+    let typeface = typefaceFromFile(arabicFixtureFont)
+
+    check typeface.shapeParagraph("").len == 0
+    let longText = "abc (123) " & arabicText & " " & "xyz ".repeat(64)
+    let longParagraph = typeface.shapeParagraph(longText)
+    check longParagraph.logicalRuns.len >= 2
+    check longParagraph.totalAdvance.x > 0
+
+    for bad in ["\x80", "\xC0\x80", "\xE0\x80\x80", "\xF0\x80\x80\x80", "\xED\xA0\x80"]:
+      expect ValueError:
+        discard bidiRuns(bad)
 
   test "subset input owns only the input, not its borrowed sets":
     check fileExists(fixtureFont)

@@ -277,6 +277,7 @@ type
   ShapedRun* = object
     textRun*: TextRun
     glyphRun*: GlyphRun
+    typefaceIndex*: int
 
   ShapedParagraph* = object
     baseDirection*: Direction
@@ -303,6 +304,23 @@ type
   Typeface* = object
     face*: Face
     font*: Font
+
+  GlyphRange* = object
+    glyphStart*: int
+    glyphEnd*: int
+
+  RunGlyphRange* = object
+    runIndex*: int
+    glyphStart*: int
+    glyphEnd*: int
+
+  FontFallbackProc* =
+    proc(text: string, run: TextRun, typefaces: seq[Typeface]): int {.nimcall.}
+
+  ShapeContext* = object
+    typefaces*: seq[Typeface]
+    options*: ParagraphOptions
+    fallback*: FontFallbackProc
 
   DecodedText = object
     codepoints: seq[Codepoint]
@@ -1106,6 +1124,14 @@ proc glyph*(
   ).boolValue:
     raise newException(ValueError, "font has no glyph for codepoint " & $codepoint)
 
+proc hasGlyph*(
+    font: Font, codepoint: Codepoint, variationSelector: Codepoint = 0
+): bool =
+  var glyph: Codepoint
+
+  raw.hb_font_get_glyph(font.requireFont, codepoint, variationSelector, addr glyph).boolValue and
+    glyph != 0
+
 proc horizontalAdvance*(font: Font, glyph: Codepoint): Position =
   raw.hb_font_get_glyph_h_advance(font.requireFont, glyph)
 
@@ -1152,6 +1178,29 @@ proc typefaceFromFile*(
     path: string, index: Natural = 0, useOpenTypeFuncs = true, scaleToUpem = true
 ): Typeface =
   initTypeface(faceFromFile(path, index), useOpenTypeFuncs, scaleToUpem)
+
+proc initShapeContext*(
+    primary: Typeface,
+    fallbacks: openArray[Typeface] = [],
+    options = ParagraphOptions(),
+    fallback: FontFallbackProc = nil,
+): ShapeContext =
+  result.typefaces.add primary
+  for typeface in fallbacks:
+    result.typefaces.add typeface
+  result.options = options
+  result.fallback = fallback
+
+proc initShapeContext*(
+    typefaces: openArray[Typeface],
+    options = ParagraphOptions(),
+    fallback: FontFallbackProc = nil,
+): ShapeContext =
+  if typefaces.len == 0:
+    raise newException(ValueError, "shape context requires at least one typeface")
+  result.typefaces = @typefaces
+  result.options = options
+  result.fallback = fallback
 
 proc initBuffer*(): Buffer =
   result.handle = raw.hb_buffer_create()
@@ -1543,6 +1592,62 @@ proc shapeRun*(
 ): ShapedRun =
   shapeRun(typeface.font, text, run, options)
 
+proc shapeRun*(
+    context: ShapeContext,
+    text: string,
+    run: TextRun,
+    typefaceIndex: Natural,
+    options = ShapeOptions(),
+): ShapedRun =
+  if typefaceIndex >= context.typefaces.len:
+    raise newException(ValueError, "typeface index is outside the shape context")
+  result = shapeRun(context.typefaces[typefaceIndex].font, text, run, options)
+  result.typefaceIndex = int(typefaceIndex)
+
+proc missingGlyphIndices*(run: GlyphRun): seq[int] =
+  for index, glyph in run.glyphs:
+    if glyph.codepoint == 0:
+      result.add index
+
+proc hasMissingGlyphs*(run: GlyphRun): bool =
+  for glyph in run.glyphs:
+    if glyph.codepoint == 0:
+      return true
+
+proc missingGlyphIndices*(run: ShapedRun): seq[int] =
+  missingGlyphIndices(run.glyphRun)
+
+proc hasMissingGlyphs*(run: ShapedRun): bool =
+  run.glyphRun.hasMissingGlyphs
+
+func codepointNeedsGlyph(codepoint: Codepoint): bool =
+  not (
+    codepoint == 0x0009'u32 or codepoint == 0x000A'u32 or codepoint == 0x000D'u32 or
+    codepoint == 0x0020'u32
+  )
+
+proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =
+  for index in run.codepointStart ..< run.codepointEnd:
+    let codepoint = decoded.codepoints[index]
+    if codepointNeedsGlyph(codepoint) and not typeface.font.hasGlyph(codepoint):
+      return false
+  true
+
+proc selectTypefaceIndex(
+    context: ShapeContext, text: string, decoded: DecodedText, run: TextRun
+): int =
+  if context.typefaces.len == 0:
+    raise newException(ValueError, "shape context requires at least one typeface")
+  if context.fallback != nil:
+    result = context.fallback(text, run, context.typefaces)
+    if result < 0 or result >= context.typefaces.len:
+      raise newException(ValueError, "font fallback callback returned an invalid index")
+    return
+  for index, typeface in context.typefaces:
+    if typeface.supportsRun(decoded, run):
+      return index
+  0
+
 proc shapeParagraph*(
     font: Font, text: string, options = ParagraphOptions()
 ): ShapedParagraph =
@@ -1570,6 +1675,36 @@ proc shapeParagraph*(
     typeface: Typeface, text: string, options = ParagraphOptions()
 ): ShapedParagraph =
   shapeParagraph(typeface.font, text, options)
+
+proc shapeParagraph*(context: ShapeContext, text: string): ShapedParagraph =
+  let analysis = analyzeBidi(text, context.options)
+  let decoded = decodeUtf8(text)
+  result.baseDirection = analysis.baseDirection
+  result.logicalRuns = newSeq[ShapedRun](analysis.runs.len)
+  for index, run in analysis.runs:
+    let typefaceIndex = context.selectTypefaceIndex(text, decoded, run)
+    let shapeOptions = initShapeOptions(
+      features = run.features,
+      direction = run.direction,
+      script = run.script,
+      language = run.language,
+      flags = context.options.flags,
+      shapers = context.options.shapers,
+      clusterLevel = context.options.clusterLevel,
+    )
+    result.logicalRuns[index] =
+      shapeRun(context, text, run, typefaceIndex, shapeOptions)
+    if result.logicalRuns[index].hasMissingGlyphs:
+      for fallbackIndex, typeface in context.typefaces:
+        if fallbackIndex != typefaceIndex and typeface.supportsRun(decoded, run):
+          result.logicalRuns[index] =
+            shapeRun(context, text, run, fallbackIndex, shapeOptions)
+          break
+
+  let visualIndices = visualOrderIndices(analysis.runs)
+  result.visualRuns = newSeq[ShapedRun](visualIndices.len)
+  for outputIndex, runIndex in visualIndices:
+    result.visualRuns[outputIndex] = result.logicalRuns[runIndex]
 
 func len*(run: GlyphRun): int =
   run.glyphs.len
@@ -1605,6 +1740,81 @@ func totalAdvance*(paragraph: ShapedParagraph): Advance =
     let advance = run.totalAdvance
     result.x += advance.x
     result.y += advance.y
+
+func glyphRangeForByteRange*(run: ShapedRun, byteStart, byteEnd: int): GlyphRange =
+  result.glyphStart = run.glyphRun.len
+  result.glyphEnd = 0
+  for index, glyph in run.glyphRun.glyphs:
+    let cluster = int(glyph.cluster)
+    if cluster >= byteStart and cluster < byteEnd:
+      if index < result.glyphStart:
+        result.glyphStart = index
+      result.glyphEnd = index + 1
+  if result.glyphStart == run.glyphRun.len:
+    result.glyphStart = 0
+    result.glyphEnd = 0
+
+func glyphRangeForByte*(run: ShapedRun, byteOffset: int): GlyphRange =
+  glyphRangeForByteRange(run, byteOffset, byteOffset + 1)
+
+proc glyphRangeForCodepoint*(
+    run: ShapedRun, text: string, codepointIndex: int
+): GlyphRange =
+  let decoded = decodeUtf8(text)
+  if codepointIndex < run.textRun.codepointStart or
+      codepointIndex >= run.textRun.codepointEnd or
+      codepointIndex >= decoded.byteStarts.len:
+    raise newException(ValueError, "codepoint index is outside the shaped run")
+  glyphRangeForByteRange(
+    run, decoded.byteStarts[codepointIndex], decoded.byteEnds[codepointIndex]
+  )
+
+func sameTextRun(a, b: TextRun): bool =
+  a.byteStart == b.byteStart and a.byteEnd == b.byteEnd and
+    a.codepointStart == b.codepointStart and a.codepointEnd == b.codepointEnd and
+    a.level.levelValue == b.level.levelValue
+
+proc logicalRunIndex*(paragraph: ShapedParagraph, visualIndex: int): int =
+  if visualIndex < 0 or visualIndex >= paragraph.visualRuns.len:
+    raise newException(ValueError, "visual run index is outside the paragraph")
+  let run = paragraph.visualRuns[visualIndex].textRun
+  for index, candidate in paragraph.logicalRuns:
+    if candidate.textRun.sameTextRun(run):
+      return index
+  raise newException(ValueError, "visual run is not present in logical order")
+
+proc visualRunIndex*(paragraph: ShapedParagraph, logicalIndex: int): int =
+  if logicalIndex < 0 or logicalIndex >= paragraph.logicalRuns.len:
+    raise newException(ValueError, "logical run index is outside the paragraph")
+  let run = paragraph.logicalRuns[logicalIndex].textRun
+  for index, candidate in paragraph.visualRuns:
+    if candidate.textRun.sameTextRun(run):
+      return index
+  raise newException(ValueError, "logical run is not present in visual order")
+
+proc logicalToVisualMap*(paragraph: ShapedParagraph): seq[int] =
+  result = newSeq[int](paragraph.logicalRuns.len)
+  for index in 0 ..< paragraph.logicalRuns.len:
+    result[index] = paragraph.visualRunIndex(index)
+
+proc visualToLogicalMap*(paragraph: ShapedParagraph): seq[int] =
+  result = newSeq[int](paragraph.visualRuns.len)
+  for index in 0 ..< paragraph.visualRuns.len:
+    result[index] = paragraph.logicalRunIndex(index)
+
+proc glyphRangeForByte*(
+    paragraph: ShapedParagraph, byteOffset: int, visual = false
+): RunGlyphRange =
+  let runs = if visual: paragraph.visualRuns else: paragraph.logicalRuns
+  for index, run in runs:
+    if byteOffset >= run.textRun.byteStart and byteOffset < run.textRun.byteEnd:
+      let glyphRange = run.glyphRangeForByte(byteOffset)
+      return RunGlyphRange(
+        runIndex: index,
+        glyphStart: glyphRange.glyphStart,
+        glyphEnd: glyphRange.glyphEnd,
+      )
+  raise newException(ValueError, "byte offset is outside the shaped paragraph")
 
 proc initSet*(): Set =
   result.handle = raw.hb_set_create()

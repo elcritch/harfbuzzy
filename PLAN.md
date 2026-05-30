@@ -103,14 +103,14 @@ Likely public types:
 
 ### P2 - Make Paragraph Shaping Practical In Real Apps
 
-- [ ] Add multi-font fallback support while preserving cluster mappings.
-- [ ] Add missing-glyph detection and fallback hooks.
-- [ ] Add reusable `ShapeContext` or `Shaper` object for configured fonts,
+- [x] Add multi-font fallback support while preserving cluster mappings.
+- [x] Add missing-glyph detection and fallback hooks.
+- [x] Add reusable `ShapeContext` or `Shaper` object for configured fonts,
   features, and bidi backend state.
-- [ ] Add APIs to map source byte/codepoint positions to shaped glyph ranges.
-- [ ] Add visual-to-logical and logical-to-visual run lookup helpers.
-- [ ] Add examples using Amiri or another Arabic-capable fixture font.
-- [ ] Add fuzz or property tests for malformed UTF-8, empty input, long input,
+- [x] Add APIs to map source byte/codepoint positions to shaped glyph ranges.
+- [x] Add visual-to-logical and logical-to-visual run lookup helpers.
+- [x] Add examples using Amiri or another Arabic-capable fixture font.
+- [x] Add fuzz or property tests for malformed UTF-8, empty input, long input,
   and mixed neutral characters.
 
 ### P3 - Broader HarfBuzz Coverage

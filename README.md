@@ -56,6 +56,24 @@ echo typeface.face.substitutionFeatureTags()
 echo typeface.font.horizontalExtents().lineAdvance
 ```
 
+For paragraph shaping with font fallback, use a `ShapeContext`:
+
+```nim
+let context = initShapeContext(
+  typefaceFromFile("latin.ttf"),
+  [typefaceFromFile("arabic.ttf")],
+  initParagraphOptions(shapers = ["ot"]),
+)
+
+let paragraph = context.shapeParagraph("abc \u0633\u0644\u0627\u0645")
+
+for run in paragraph.visualRuns:
+  echo run.typefaceIndex, " ", run.textRun.byteStart, "..", run.textRun.byteEnd
+```
+
+`ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
+to glyph-range helpers for editor and layout integrations.
+
 ## Build
 
 Install dependencies with Atlas:
