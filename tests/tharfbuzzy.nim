@@ -74,6 +74,18 @@ suite "harfbuzzy wrapper":
     check infos.len > 0
     check positions.len == infos.len
 
+  test "typeface shapes text without exposing buffer ownership":
+    check fileExists(fixtureFont)
+    let typeface = typefaceFromFile(fixtureFont)
+    let options = initShapeOptions(features = [toFeature("kern=0")])
+
+    let run = typeface.shape("hello", options)
+
+    check run.len > 0
+    check run.totalAdvance.x > 0
+    for glyph in run:
+      check glyph.codepoint != 0
+
   test "subset input owns only the input, not its borrowed sets":
     check fileExists(fixtureFont)
     let face = faceFromFile(fixtureFont)

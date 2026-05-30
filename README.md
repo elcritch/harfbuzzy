@@ -15,16 +15,11 @@ The package has two layers:
 ```nim
 import harfbuzzy
 
-var face = faceFromFile("font.ttf")
-var font = initFont(face)
-var buffer = initBuffer()
+let typeface = typefaceFromFile("font.ttf")
+let run = typeface.shape("hello")
 
-buffer.addUtf8("hello")
-buffer.guessSegmentProperties()
-shape(font, buffer)
-
-for info in buffer.glyphInfos:
-  echo info.codepoint, " cluster=", info.cluster
+for glyph in run:
+  echo glyph.codepoint, " cluster=", glyph.cluster
 ```
 
 ## Build
@@ -40,6 +35,10 @@ Run tests:
 ```sh
 nim test
 ```
+
+`harfbuzzy` requires `--mm:arc`, `--mm:orc`, or `--mm:atomicArc`. The wrapper
+types own HarfBuzz handles with Nim destructors, so callers do not call
+`hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
 
 The raw module includes headers from `deps/harfbuzz/src` and dynamically loads
 `libharfbuzz` plus `libharfbuzz-subset`. On macOS it uses Homebrew's

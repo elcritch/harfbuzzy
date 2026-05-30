@@ -31,6 +31,13 @@ HarfBuzz handles use internal reference counts. The public Nim wrappers are
 small value handles whose `=copy`/`=dup` call `hb_*_reference` and whose
 `=destroy` calls `hb_*_destroy`.
 
+The root `harfbuzzy` module requires `--mm:arc`, `--mm:orc`, or
+`--mm:atomicArc`, because the high-level wrappers rely on deterministic Nim
+destructors for HarfBuzz handle release. Aggregate helpers such as `Typeface`
+and `GlyphRun` do not need custom hooks: their fields are either auto-managed
+Nim containers or lower-level HarfBuzz handle wrappers that already define the
+right hooks.
+
 One luaharfbuzz issue worth avoiding: `hb_subset_input_unicode_set()` returns a
 borrowed set owned by the subset input, but luaharfbuzz wraps it as a normal
 `Set` userdata with a `__gc` destructor. `harfbuzzy` does not expose that

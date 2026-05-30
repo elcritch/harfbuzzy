@@ -1,5 +1,11 @@
 ## Ergonomic HarfBuzz wrapper built on top of `harfbuzzy/raw`.
 
+when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
+  {.
+    error:
+      "harfbuzzy requires --mm:arc, --mm:orc, or --mm:atomicArc for deterministic HarfBuzz handle destructors"
+  .}
+
 import harfbuzzy/raw
 
 type
@@ -188,6 +194,10 @@ type
     x*: int
     y*: int
 
+  Advance* = object
+    x*: Position
+    y*: Position
+
   Ppem* = object
     x*: uint
     y*: uint
@@ -196,6 +206,29 @@ type
     major*: int
     minor*: int
     micro*: int
+
+  Glyph* = object
+    codepoint*: Codepoint
+    cluster*: uint32
+    flags*: uint32
+    xAdvance*: Position
+    yAdvance*: Position
+    xOffset*: Position
+    yOffset*: Position
+
+  GlyphRun* = object
+    glyphs*: seq[Glyph]
+
+  ShapeOptions* = object
+    direction*: Direction
+    script*: Script
+    language*: Language
+    features*: seq[Feature]
+    flags*: BufferFlags
+
+  Typeface* = object
+    face*: Face
+    font*: Font
 
 const
   versionMajor* = raw.HB_VERSION_MAJOR
@@ -436,6 +469,21 @@ proc toFeature*(value: string): Feature =
   else:
     raise newException(ValueError, "invalid HarfBuzz feature: " & value)
 
+proc initShapeOptions*(
+    features: openArray[Feature] = [],
+    direction = Direction.invalid,
+    script = scriptInvalid,
+    language = languageInvalid,
+    flags: BufferFlags = {},
+): ShapeOptions =
+  ShapeOptions(
+    direction: direction,
+    script: script,
+    language: language,
+    features: @features,
+    flags: flags,
+  )
+
 proc toRaw(feature: Feature): raw.HbFeature =
   raw.HbFeature(
     tag: raw.HbTag(feature.tag),
@@ -613,6 +661,19 @@ proc glyphExtents*(font: Font, glyph: Codepoint): GlyphExtents =
     height: extents.height,
   )
 
+proc initTypeface*(face: Face, useOpenTypeFuncs = true, scaleToUpem = true): Typeface =
+  result.face = face
+  result.font = initFont(result.face, useOpenTypeFuncs)
+  if scaleToUpem:
+    let units = result.face.upem
+    if units > 0:
+      result.font.setScale(units, units)
+
+proc typefaceFromFile*(
+    path: string, index: Natural = 0, useOpenTypeFuncs = true, scaleToUpem = true
+): Typeface =
+  initTypeface(faceFromFile(path, index), useOpenTypeFuncs, scaleToUpem)
+
 proc initBuffer*(): Buffer =
   result.handle = raw.hb_buffer_create()
   if result.handle == nil:
@@ -675,7 +736,7 @@ proc addCodepoints*(buffer: var Buffer, text: openArray[Codepoint]) =
       unsafeAddr text[0]
   raw.hb_buffer_add_codepoints(buffer.requireBuffer, textPtr, length, 0, length)
 
-proc glyphInfos*(buffer: var Buffer): seq[GlyphInfo] =
+proc glyphInfos*(buffer: Buffer): seq[GlyphInfo] =
   var length: cuint
   let infos = raw.hb_buffer_get_glyph_infos(buffer.requireBuffer, addr length)
   result = newSeq[GlyphInfo](int(length))
@@ -688,7 +749,7 @@ proc glyphInfos*(buffer: var Buffer): seq[GlyphInfo] =
       flags: infos[i].mask and uint32(raw.HB_GLYPH_FLAG_DEFINED),
     )
 
-proc glyphPositions*(buffer: var Buffer): seq[GlyphPosition] =
+proc glyphPositions*(buffer: Buffer): seq[GlyphPosition] =
   var length: cuint
   let positions = raw.hb_buffer_get_glyph_positions(buffer.requireBuffer, addr length)
   result = newSeq[GlyphPosition](int(length))
@@ -702,8 +763,19 @@ proc glyphPositions*(buffer: var Buffer): seq[GlyphPosition] =
       yOffset: positions[i].yOffset,
     )
 
-proc hasPositions*(buffer: var Buffer): bool =
+proc hasPositions*(buffer: Buffer): bool =
   raw.hb_buffer_has_positions(buffer.requireBuffer).boolValue
+
+proc applyShapeOptions*(buffer: var Buffer, options: ShapeOptions) =
+  if options.direction != Direction.invalid:
+    buffer.setDirection(options.direction)
+  if raw.HbScript(options.script) != raw.HB_SCRIPT_INVALID:
+    buffer.setScript(options.script)
+  if raw.HbLanguage(options.language) != raw.HB_LANGUAGE_INVALID:
+    buffer.setLanguage(options.language)
+  if options.flags != {}:
+    buffer.setFlags(options.flags)
+  buffer.guessSegmentProperties()
 
 proc shape*(font: Font, buffer: var Buffer, features: openArray[Feature] = []) =
   if features.len == 0:
@@ -718,6 +790,62 @@ proc shape*(font: Font, buffer: var Buffer, features: openArray[Feature] = []) =
       addr rawFeatures[0],
       checkedCuint(rawFeatures.len, "feature count"),
     )
+
+proc toGlyphRun*(buffer: Buffer): GlyphRun =
+  var infoLength: cuint
+  let infos = raw.hb_buffer_get_glyph_infos(buffer.requireBuffer, addr infoLength)
+  var positionLength: cuint
+  let positions =
+    raw.hb_buffer_get_glyph_positions(buffer.requireBuffer, addr positionLength)
+
+  if infoLength != positionLength:
+    raise newException(ValueError, "HarfBuzz glyph info and position lengths differ")
+
+  result.glyphs = newSeq[Glyph](int(infoLength))
+  if result.glyphs.len > 0:
+    if infos == nil:
+      raise newException(ValueError, "HarfBuzz returned null glyph info data")
+    if positions == nil:
+      raise newException(ValueError, "HarfBuzz returned null glyph position data")
+
+  for i in 0 ..< result.glyphs.len:
+    result.glyphs[i] = Glyph(
+      codepoint: infos[i].codepoint,
+      cluster: infos[i].cluster,
+      flags: infos[i].mask and uint32(raw.HB_GLYPH_FLAG_DEFINED),
+      xAdvance: positions[i].xAdvance,
+      yAdvance: positions[i].yAdvance,
+      xOffset: positions[i].xOffset,
+      yOffset: positions[i].yOffset,
+    )
+
+proc shapeText*(font: Font, text: string, options = ShapeOptions()): GlyphRun =
+  var buffer = initBuffer()
+  buffer.addUtf8(text)
+  buffer.applyShapeOptions(options)
+  shape(font, buffer, options.features)
+  buffer.toGlyphRun()
+
+proc shape*(font: Font, text: string, options = ShapeOptions()): GlyphRun =
+  shapeText(font, text, options)
+
+proc shapeText*(typeface: Typeface, text: string, options = ShapeOptions()): GlyphRun =
+  shapeText(typeface.font, text, options)
+
+proc shape*(typeface: Typeface, text: string, options = ShapeOptions()): GlyphRun =
+  shapeText(typeface, text, options)
+
+func len*(run: GlyphRun): int =
+  run.glyphs.len
+
+iterator items*(run: GlyphRun): lent Glyph =
+  for glyph in run.glyphs:
+    yield glyph
+
+func totalAdvance*(run: GlyphRun): Advance =
+  for glyph in run.glyphs:
+    result.x += glyph.xAdvance
+    result.y += glyph.yAdvance
 
 proc initSet*(): Set =
   result.handle = raw.hb_set_create()
