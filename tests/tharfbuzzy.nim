@@ -94,6 +94,72 @@ suite "harfbuzzy wrapper":
     for glyph in run:
       check glyph.codepoint != 0
 
+  test "shape options expose cluster levels and explicit shapers":
+    check fileExists(fixtureFont)
+    let face = faceFromFile(fixtureFont)
+    var font = initFont(face)
+    var buffer = initBuffer()
+    buffer.addUtf8("hello")
+    buffer.applyShapeOptions(
+      initShapeOptions(
+        direction = Direction.ltr,
+        script = scriptLatin,
+        clusterLevel = ClusterLevel.characters,
+      )
+    )
+
+    check buffer.clusterLevel == ClusterLevel.characters
+    check "ot" in availableShapers()
+    shapeFull(font, buffer, shapers = ["ot"])
+    check buffer.toGlyphRun.len > 0
+
+  test "shape plans can be cached and reused":
+    check fileExists(fixtureFont)
+    let typeface = typefaceFromFile(fixtureFont)
+    let options = initShapeOptions(
+      direction = Direction.ltr,
+      script = scriptLatin,
+      language = toLanguage("en"),
+      features = [toFeature("kern=0")],
+      shapers = ["ot"],
+    )
+    let plan = initShapePlan(typeface, options)
+    let run = typeface.shape("hello", plan, options)
+
+    check plan.shaper.len > 0
+    check run.len > 0
+    check run.totalAdvance.x > 0
+
+  test "OpenType features and layout metrics are discoverable":
+    check fileExists(fixtureFont)
+    let face = faceFromFile(fixtureFont)
+    let typeface = initTypeface(face)
+    let glyph = typeface.font.nominalGlyph(65)
+    let horizontal = typeface.font.horizontalExtents()
+
+    check face.hasOpenTypeSubstitution or face.hasOpenTypePositioning
+    check face.substitutionFeatureTags.len + face.positioningFeatureTags.len > 0
+    check horizontal.lineAdvance > 0
+    check typeface.font.horizontalAdvance(glyph) > 0
+    check typeface.font.advance(glyph, Direction.ltr).x > 0
+    check face.fromEm(face.toEm(horizontal.ascender)) == horizontal.ascender
+
+  test "shaped buffers serialize for fixtures":
+    check fileExists(fixtureFont)
+    let face = faceFromFile(fixtureFont)
+    var font = initFont(face)
+    var buffer = initBuffer()
+    buffer.addUtf8("hello")
+    buffer.applyShapeOptions(
+      initShapeOptions(direction = Direction.ltr, script = scriptLatin)
+    )
+    shape(font, buffer)
+
+    check "text" in availableSerializeFormats()
+    let serialized = buffer.serializeGlyphs(font, flags = {noGlyphNames})
+    check serialized.len > 0
+    check serialized[0] == '['
+
   test "bidi run segmentation handles ltr, rtl, and invalid input":
     let ltrRuns = bidiRuns("hello")
     check ltrRuns.len == 1

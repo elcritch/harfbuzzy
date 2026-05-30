@@ -66,6 +66,8 @@ type
   HbBufferContentType* = distinct cuint
   HbBufferFlags* = distinct cuint
   HbBufferClusterLevel* = distinct cuint
+  HbBufferSerializeFlags* = distinct cuint
+  HbBufferSerializeFormat* = distinct uint32
   HbSubsetSets* = distinct cuint
   HbSubsetFlags* = distinct cuint
 
@@ -148,6 +150,8 @@ type
 
   HbFontFuncsObj* {.importc: "hb_font_funcs_t", header: hbHeader, incompleteStruct.} = object
   HbBufferObj* {.importc: "hb_buffer_t", header: hbHeader, incompleteStruct.} = object
+
+  HbShapePlanObj* {.importc: "hb_shape_plan_t", header: hbHeader, incompleteStruct.} = object
   HbSetObj* {.importc: "hb_set_t", header: hbHeader, incompleteStruct.} = object
   HbMapObj* {.importc: "hb_map_t", header: hbHeader, incompleteStruct.} = object
 
@@ -168,6 +172,7 @@ type
   HbFont* = ptr HbFontObj
   HbFontFuncs* = ptr HbFontFuncsObj
   HbBuffer* = ptr HbBufferObj
+  HbShapePlan* = ptr HbShapePlanObj
   HbSet* = ptr HbSetObj
   HbMap* = ptr HbMapObj
   HbUnicodeFuncs* = ptr HbUnicodeFuncsObj
@@ -239,6 +244,24 @@ const
   HB_BUFFER_CLUSTER_LEVEL_GRAPHEMES* = HbBufferClusterLevel(3)
   HB_BUFFER_CLUSTER_LEVEL_DEFAULT* = HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES
 
+  HB_BUFFER_SERIALIZE_FLAG_DEFAULT* = HbBufferSerializeFlags(0x00000000)
+  HB_BUFFER_SERIALIZE_FLAG_NO_CLUSTERS* = HbBufferSerializeFlags(0x00000001)
+  HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS* = HbBufferSerializeFlags(0x00000002)
+  HB_BUFFER_SERIALIZE_FLAG_NO_GLYPH_NAMES* = HbBufferSerializeFlags(0x00000004)
+  HB_BUFFER_SERIALIZE_FLAG_GLYPH_EXTENTS* = HbBufferSerializeFlags(0x00000008)
+  HB_BUFFER_SERIALIZE_FLAG_GLYPH_FLAGS* = HbBufferSerializeFlags(0x00000010)
+  HB_BUFFER_SERIALIZE_FLAG_NO_ADVANCES* = HbBufferSerializeFlags(0x00000020)
+  HB_BUFFER_SERIALIZE_FLAG_DEFINED* = HbBufferSerializeFlags(0x0000003f)
+
+  HB_BUFFER_SERIALIZE_FORMAT_TEXT* = HbBufferSerializeFormat(hbTag('T', 'E', 'X', 'T'))
+  HB_BUFFER_SERIALIZE_FORMAT_JSON* = HbBufferSerializeFormat(hbTag('J', 'S', 'O', 'N'))
+  HB_BUFFER_SERIALIZE_FORMAT_INVALID* = HbBufferSerializeFormat(HB_TAG_NONE)
+
+  HB_OT_TAG_GSUB* = hbTag('G', 'S', 'U', 'B')
+  HB_OT_TAG_GPOS* = hbTag('G', 'P', 'O', 'S')
+  HB_OT_LAYOUT_NO_FEATURE_INDEX* = cuint(0xffff)
+  HB_OT_LAYOUT_DEFAULT_LANGUAGE_INDEX* = cuint(0xffff)
+
   HB_SET_VALUE_INVALID* = HB_CODEPOINT_INVALID
 
   HB_SUBSET_SETS_GLYPH_INDEX* = HbSubsetSets(0)
@@ -270,6 +293,9 @@ func `and`*(a, b: HbBufferFlags): HbBufferFlags =
 
 func contains*(flags, flag: HbBufferFlags): bool =
   (cuint(flags) and cuint(flag)) != 0
+
+func `or`*(a, b: HbBufferSerializeFlags): HbBufferSerializeFlags =
+  HbBufferSerializeFlags(cuint(a) or cuint(b))
 
 proc hb_version*(
   major, minor, micro: ptr cint
@@ -465,13 +491,33 @@ proc hb_font_get_h_extents*(
   font: HbFont, extents: ptr HbFontExtents
 ): HbBool {.cdecl, importc: "hb_font_get_h_extents", dynlib: hbLib.}
 
+proc hb_font_get_v_extents*(
+  font: HbFont, extents: ptr HbFontExtents
+): HbBool {.cdecl, importc: "hb_font_get_v_extents", dynlib: hbLib.}
+
 proc hb_font_get_nominal_glyph*(
   font: HbFont, unicode: HbCodepoint, glyph: ptr HbCodepoint
 ): HbBool {.cdecl, importc: "hb_font_get_nominal_glyph", dynlib: hbLib.}
 
+proc hb_font_get_glyph*(
+  font: HbFont, unicode, variationSelector: HbCodepoint, glyph: ptr HbCodepoint
+): HbBool {.cdecl, importc: "hb_font_get_glyph", dynlib: hbLib.}
+
 proc hb_font_get_glyph_h_advance*(
   font: HbFont, glyph: HbCodepoint
 ): HbPosition {.cdecl, importc: "hb_font_get_glyph_h_advance", dynlib: hbLib.}
+
+proc hb_font_get_glyph_v_advance*(
+  font: HbFont, glyph: HbCodepoint
+): HbPosition {.cdecl, importc: "hb_font_get_glyph_v_advance", dynlib: hbLib.}
+
+proc hb_font_get_extents_for_direction*(
+  font: HbFont, direction: HbDirection, extents: ptr HbFontExtents
+) {.cdecl, importc: "hb_font_get_extents_for_direction", dynlib: hbLib.}
+
+proc hb_font_get_glyph_advance_for_direction*(
+  font: HbFont, glyph: HbCodepoint, direction: HbDirection, x, y: ptr HbPosition
+) {.cdecl, importc: "hb_font_get_glyph_advance_for_direction", dynlib: hbLib.}
 
 proc hb_font_get_glyph_extents*(
   font: HbFont, glyph: HbCodepoint, extents: ptr HbGlyphExtents
@@ -492,6 +538,46 @@ proc hb_aat_layout_has_positioning*(
 proc hb_aat_layout_has_tracking*(
   face: HbFace
 ): HbBool {.cdecl, importc: "hb_aat_layout_has_tracking", dynlib: hbLib.}
+
+proc hb_ot_layout_has_substitution*(
+  face: HbFace
+): HbBool {.cdecl, importc: "hb_ot_layout_has_substitution", dynlib: hbLib.}
+
+proc hb_ot_layout_has_positioning*(
+  face: HbFace
+): HbBool {.cdecl, importc: "hb_ot_layout_has_positioning", dynlib: hbLib.}
+
+proc hb_ot_layout_table_get_feature_tags*(
+  face: HbFace,
+  tableTag: HbTag,
+  startOffset: cuint,
+  featureCount: ptr cuint,
+  featureTags: ptr HbTag,
+): cuint {.cdecl, importc: "hb_ot_layout_table_get_feature_tags", dynlib: hbLib.}
+
+proc hb_ot_layout_table_find_script*(
+  face: HbFace, tableTag, scriptTag: HbTag, scriptIndex: ptr cuint
+): HbBool {.cdecl, importc: "hb_ot_layout_table_find_script", dynlib: hbLib.}
+
+proc hb_ot_layout_script_select_language2*(
+  face: HbFace,
+  tableTag: HbTag,
+  scriptIndex: cuint,
+  languageCount: cuint,
+  languageTags: ptr HbTag,
+  languageIndex: ptr cuint,
+  chosenLanguage: ptr HbTag,
+): HbBool {.cdecl, importc: "hb_ot_layout_script_select_language2", dynlib: hbLib.}
+
+proc hb_ot_layout_language_get_feature_tags*(
+  face: HbFace,
+  tableTag: HbTag,
+  scriptIndex: cuint,
+  languageIndex: cuint,
+  startOffset: cuint,
+  featureCount: ptr cuint,
+  featureTags: ptr HbTag,
+): cuint {.cdecl, importc: "hb_ot_layout_language_get_feature_tags", dynlib: hbLib.}
 
 proc hb_buffer_create*(): HbBuffer {.cdecl, importc: "hb_buffer_create", dynlib: hbLib.}
 proc hb_buffer_create_similar*(
@@ -626,6 +712,31 @@ proc hb_buffer_has_positions*(
   buffer: HbBuffer
 ): HbBool {.cdecl, importc: "hb_buffer_has_positions", dynlib: hbLib.}
 
+proc hb_buffer_serialize_format_from_string*(
+  str: cstring, len: cint
+): HbBufferSerializeFormat {.
+  cdecl, importc: "hb_buffer_serialize_format_from_string", dynlib: hbLib
+.}
+
+proc hb_buffer_serialize_format_to_string*(
+  format: HbBufferSerializeFormat
+): cstring {.cdecl, importc: "hb_buffer_serialize_format_to_string", dynlib: hbLib.}
+
+proc hb_buffer_serialize_list_formats*(): cstringArray {.
+  cdecl, importc: "hb_buffer_serialize_list_formats", dynlib: hbLib
+.}
+
+proc hb_buffer_serialize_glyphs*(
+  buffer: HbBuffer,
+  start, ending: cuint,
+  buf: cstring,
+  bufSize: cuint,
+  bufConsumed: ptr cuint,
+  font: HbFont,
+  format: HbBufferSerializeFormat,
+  flags: HbBufferSerializeFlags,
+): cuint {.cdecl, importc: "hb_buffer_serialize_glyphs", dynlib: hbLib.}
+
 proc hb_shape*(
   font: HbFont, buffer: HbBuffer, features: ptr HbFeature, numFeatures: cuint
 ) {.cdecl, importc: "hb_shape", dynlib: hbLib.}
@@ -641,6 +752,42 @@ proc hb_shape_full*(
 proc hb_shape_list_shapers*(): cstringArray {.
   cdecl, importc: "hb_shape_list_shapers", dynlib: hbLib
 .}
+
+proc hb_shape_plan_create*(
+  face: HbFace,
+  props: ptr HbSegmentProperties,
+  userFeatures: ptr HbFeature,
+  numUserFeatures: cuint,
+  shaperList: cstringArray,
+): HbShapePlan {.cdecl, importc: "hb_shape_plan_create", dynlib: hbLib.}
+
+proc hb_shape_plan_create_cached*(
+  face: HbFace,
+  props: ptr HbSegmentProperties,
+  userFeatures: ptr HbFeature,
+  numUserFeatures: cuint,
+  shaperList: cstringArray,
+): HbShapePlan {.cdecl, importc: "hb_shape_plan_create_cached", dynlib: hbLib.}
+
+proc hb_shape_plan_reference*(
+  shapePlan: HbShapePlan
+): HbShapePlan {.cdecl, importc: "hb_shape_plan_reference", dynlib: hbLib.}
+
+proc hb_shape_plan_destroy*(
+  shapePlan: HbShapePlan
+) {.cdecl, importc: "hb_shape_plan_destroy", dynlib: hbLib.}
+
+proc hb_shape_plan_execute*(
+  shapePlan: HbShapePlan,
+  font: HbFont,
+  buffer: HbBuffer,
+  features: ptr HbFeature,
+  numFeatures: cuint,
+): HbBool {.cdecl, importc: "hb_shape_plan_execute", dynlib: hbLib.}
+
+proc hb_shape_plan_get_shaper*(
+  shapePlan: HbShapePlan
+): cstring {.cdecl, importc: "hb_shape_plan_get_shaper", dynlib: hbLib.}
 
 proc hb_set_create*(): HbSet {.cdecl, importc: "hb_set_create", dynlib: hbLib.}
 proc hb_set_get_empty*(): HbSet {.cdecl, importc: "hb_set_get_empty", dynlib: hbLib.}

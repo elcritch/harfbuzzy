@@ -21,6 +21,9 @@ type
   Buffer* = object
     handle: raw.HbBuffer
 
+  ShapePlan* = object
+    handle: raw.HbShapePlan
+
   Set* = object
     handle: raw.HbSet
 
@@ -95,6 +98,20 @@ proc `=copy`(dest: var Buffer, src: Buffer) =
 proc `=dup`(src: Buffer): Buffer =
   dupHandle(src, raw.hb_buffer_reference)
 
+proc `=destroy`(x: ShapePlan) =
+  destroyHandle(x.handle, raw.hb_shape_plan_destroy)
+
+proc `=wasMoved`(x: var ShapePlan) =
+  x.handle = nil
+
+proc `=copy`(dest: var ShapePlan, src: ShapePlan) =
+  copyHandle(
+    dest.handle, src.handle, raw.hb_shape_plan_reference, raw.hb_shape_plan_destroy
+  )
+
+proc `=dup`(src: ShapePlan): ShapePlan =
+  dupHandle(src, raw.hb_shape_plan_reference)
+
 proc `=destroy`(x: Set) =
   destroyHandle(x.handle, raw.hb_set_destroy)
 
@@ -161,6 +178,26 @@ type
     produceSafeToInsertTatweel
 
   BufferFlags* = set[BufferFlag]
+
+  ClusterLevel* {.pure.} = enum
+    monotoneGraphemes
+    monotoneCharacters
+    characters
+    graphemes
+
+  SerializeFormat* {.pure.} = enum
+    text
+    json
+
+  SerializeFlag* = enum
+    noClusters
+    noPositions
+    noGlyphNames
+    glyphExtents
+    glyphFlags
+    noAdvances
+
+  SerializeFlags* = set[SerializeFlag]
 
   Feature* = object
     tag*: Tag
@@ -251,13 +288,17 @@ type
     script*: Script
     language*: Language
     features*: seq[Feature]
+    shapers*: seq[string]
     flags*: BufferFlags
+    clusterLevel*: ClusterLevel
 
   ParagraphOptions* = object
     baseDirection*: ParagraphDirection
     language*: Language
     features*: seq[Feature]
+    shapers*: seq[string]
     flags*: BufferFlags
+    clusterLevel*: ClusterLevel
 
   Typeface* = object
     face*: Face
@@ -287,6 +328,8 @@ const
   scriptLatin* = Script(raw.HB_SCRIPT_LATIN)
   scriptInvalid* = Script(raw.HB_SCRIPT_INVALID)
   languageInvalid* = Language(raw.HB_LANGUAGE_INVALID)
+  tableGsub* = Tag(raw.HB_OT_TAG_GSUB)
+  tableGpos* = Tag(raw.HB_OT_TAG_GPOS)
 
 func toRaw(direction: Direction): raw.HbDirection =
   raw.HbDirection(cuint(ord(direction)))
@@ -336,6 +379,48 @@ func toFlags(flags: raw.HbBufferFlags): BufferFlags =
   if flags.contains(raw.HB_BUFFER_FLAG_PRODUCE_SAFE_TO_INSERT_TATWEEL):
     result.incl produceSafeToInsertTatweel
 
+func toRaw(level: ClusterLevel): raw.HbBufferClusterLevel =
+  case level
+  of ClusterLevel.monotoneGraphemes:
+    raw.HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES
+  of ClusterLevel.monotoneCharacters:
+    raw.HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS
+  of ClusterLevel.characters:
+    raw.HB_BUFFER_CLUSTER_LEVEL_CHARACTERS
+  of ClusterLevel.graphemes:
+    raw.HB_BUFFER_CLUSTER_LEVEL_GRAPHEMES
+
+func toClusterLevel(level: raw.HbBufferClusterLevel): ClusterLevel =
+  case cuint(level)
+  of cuint(raw.HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS):
+    ClusterLevel.monotoneCharacters
+  of cuint(raw.HB_BUFFER_CLUSTER_LEVEL_CHARACTERS):
+    ClusterLevel.characters
+  of cuint(raw.HB_BUFFER_CLUSTER_LEVEL_GRAPHEMES):
+    ClusterLevel.graphemes
+  else:
+    ClusterLevel.monotoneGraphemes
+
+func toRaw(flags: SerializeFlags): raw.HbBufferSerializeFlags =
+  result = raw.HB_BUFFER_SERIALIZE_FLAG_DEFAULT
+  if noClusters in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_NO_CLUSTERS
+  if noPositions in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_NO_POSITIONS
+  if noGlyphNames in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_NO_GLYPH_NAMES
+  if glyphExtents in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_GLYPH_EXTENTS
+  if glyphFlags in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_GLYPH_FLAGS
+  if noAdvances in flags:
+    result = result or raw.HB_BUFFER_SERIALIZE_FLAG_NO_ADVANCES
+
+func toRaw(format: SerializeFormat): raw.HbBufferSerializeFormat =
+  case format
+  of SerializeFormat.text: raw.HB_BUFFER_SERIALIZE_FORMAT_TEXT
+  of SerializeFormat.json: raw.HB_BUFFER_SERIALIZE_FORMAT_JSON
+
 func isNil*(blob: Blob): bool =
   blob.handle == nil
 func isNil*(face: Face): bool =
@@ -344,6 +429,8 @@ func isNil*(font: Font): bool =
   font.handle == nil
 func isNil*(buffer: Buffer): bool =
   buffer.handle == nil
+func isNil*(plan: ShapePlan): bool =
+  plan.handle == nil
 func isNil*(set: Set): bool =
   set.handle == nil
 func isNil*(input: SubsetInput): bool =
@@ -371,6 +458,11 @@ proc requireBuffer(buffer: Buffer): raw.HbBuffer =
     raise newException(ValueError, "HarfBuzz buffer is uninitialized")
   buffer.handle
 
+proc requirePlan(plan: ShapePlan): raw.HbShapePlan =
+  if plan.handle == nil:
+    raise newException(ValueError, "HarfBuzz shape plan is uninitialized")
+  plan.handle
+
 proc requireSet(set: Set): raw.HbSet =
   if set.handle == nil:
     raise newException(ValueError, "HarfBuzz set is uninitialized")
@@ -381,7 +473,7 @@ proc requireInput(input: SubsetInput): raw.HbSubsetInput =
     raise newException(ValueError, "HarfBuzz subset input is uninitialized")
   input.handle
 
-proc requirePlan(plan: SubsetPlan): raw.HbSubsetPlan =
+proc requireSubsetPlan(plan: SubsetPlan): raw.HbSubsetPlan =
   if plan.handle == nil:
     raise newException(ValueError, "HarfBuzz subset plan is uninitialized")
   plan.handle
@@ -514,27 +606,38 @@ proc toFeature*(value: string): Feature =
 
 proc initShapeOptions*(
     features: openArray[Feature] = [],
+    shapers: openArray[string] = [],
     direction = Direction.invalid,
     script = scriptInvalid,
     language = languageInvalid,
     flags: BufferFlags = {},
+    clusterLevel = ClusterLevel.monotoneGraphemes,
 ): ShapeOptions =
   ShapeOptions(
     direction: direction,
     script: script,
     language: language,
     features: @features,
+    shapers: @shapers,
     flags: flags,
+    clusterLevel: clusterLevel,
   )
 
 proc initParagraphOptions*(
     baseDirection = ParagraphDirection.autoDetect,
     language = languageInvalid,
     features: openArray[Feature] = [],
+    shapers: openArray[string] = [],
     flags: BufferFlags = {},
+    clusterLevel = ClusterLevel.monotoneGraphemes,
 ): ParagraphOptions =
   ParagraphOptions(
-    baseDirection: baseDirection, language: language, features: @features, flags: flags
+    baseDirection: baseDirection,
+    language: language,
+    features: @features,
+    shapers: @shapers,
+    flags: flags,
+    clusterLevel: clusterLevel,
   )
 
 proc byteValue(text: string, index: int): uint8 =
@@ -630,16 +733,32 @@ func isLatinCodepoint(codepoint: Codepoint): bool =
     (codepoint >= 0x0061'u32 and codepoint <= 0x007A'u32) or
     (codepoint >= 0x00C0'u32 and codepoint <= 0x024F'u32)
 
+func scriptFor*(codepoint: Codepoint): Script =
+  if isArabicCodepoint(codepoint):
+    scriptArabic
+  elif isHebrewCodepoint(codepoint):
+    scriptHebrew
+  elif isLatinCodepoint(codepoint):
+    scriptLatin
+  else:
+    scriptUnknown
+
 func inferScript(text: openArray[Codepoint], first, last: int): Script =
   for index in first ..< last:
-    let codepoint = text[index]
-    if isArabicCodepoint(codepoint):
-      return scriptArabic
-    if isHebrewCodepoint(codepoint):
-      return scriptHebrew
-    if isLatinCodepoint(codepoint):
-      return scriptLatin
+    let script = scriptFor(text[index])
+    if raw.HbScript(script) != raw.HB_SCRIPT_UNKNOWN:
+      return script
   scriptUnknown
+
+proc defaultLanguageForScript*(script: Script): Language =
+  if raw.HbScript(script) == raw.HB_SCRIPT_ARABIC:
+    toLanguage("ar")
+  elif raw.HbScript(script) == raw.HbScript(scriptHebrew):
+    toLanguage("he")
+  elif raw.HbScript(script) == raw.HB_SCRIPT_LATIN:
+    toLanguage("en")
+  else:
+    defaultLanguage()
 
 proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
   let decoded = decodeUtf8(text)
@@ -672,9 +791,23 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
   result.baseDirection = base.baseDirection
   var first = 0
   while first < levels.len:
+    var runScript = scriptFor(decoded.codepoints[first])
     var last = first + 1
     while last < levels.len and levels[last] == levels[first]:
+      let nextScript = scriptFor(decoded.codepoints[last])
+      if raw.HbScript(runScript) == raw.HB_SCRIPT_UNKNOWN:
+        runScript = nextScript
+      elif raw.HbScript(nextScript) != raw.HB_SCRIPT_UNKNOWN and
+          raw.HbScript(nextScript) != raw.HbScript(runScript):
+        break
       inc last
+    if raw.HbScript(runScript) == raw.HB_SCRIPT_UNKNOWN:
+      runScript = inferScript(decoded.codepoints, first, last)
+    let language =
+      if raw.HbLanguage(options.language) != raw.HB_LANGUAGE_INVALID:
+        options.language
+      else:
+        defaultLanguageForScript(runScript)
     result.runs.add TextRun(
       byteStart: decoded.byteStarts[first],
       byteEnd: decoded.byteEnds[last - 1],
@@ -682,8 +815,8 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
       codepointEnd: last,
       direction: levels[first].levelDirection,
       level: BidiLevel(uint8(levels[first])),
-      script: inferScript(decoded.codepoints, first, last),
-      language: options.language,
+      script: runScript,
+      language: language,
       features: options.features,
     )
     first = last
@@ -846,6 +979,63 @@ proc hasAatPositioning*(face: Face): bool =
 proc hasAatTracking*(face: Face): bool =
   raw.hb_aat_layout_has_tracking(face.requireFace).boolValue
 
+proc hasOpenTypeSubstitution*(face: Face): bool =
+  raw.hb_ot_layout_has_substitution(face.requireFace).boolValue
+
+proc hasOpenTypePositioning*(face: Face): bool =
+  raw.hb_ot_layout_has_positioning(face.requireFace).boolValue
+
+proc layoutFeatureTags*(face: Face, tableTag: Tag): seq[Tag] =
+  const chunkSize = 64
+  var start: cuint
+  while true:
+    var count = cuint(chunkSize)
+    var tags = newSeq[raw.HbTag](chunkSize)
+    let fetched = raw.hb_ot_layout_table_get_feature_tags(
+      face.requireFace, raw.HbTag(tableTag), start, addr count, addr tags[0]
+    )
+    for i in 0 ..< int(count):
+      result.add Tag(tags[i])
+    if fetched == 0 or count < chunkSize:
+      break
+    start += count
+
+proc layoutFeatureTags*(face: Face, tableTag: Tag, script: Script): seq[Tag] =
+  var scriptIndex: cuint
+  if not raw.hb_ot_layout_table_find_script(
+    face.requireFace,
+    raw.HbTag(tableTag),
+    raw.hb_script_to_iso15924_tag(raw.HbScript(script)),
+    addr scriptIndex,
+  ).boolValue:
+    return
+
+  const chunkSize = 64
+  var start: cuint
+  while true:
+    var count = cuint(chunkSize)
+    var tags = newSeq[raw.HbTag](chunkSize)
+    let fetched = raw.hb_ot_layout_language_get_feature_tags(
+      face.requireFace,
+      raw.HbTag(tableTag),
+      scriptIndex,
+      raw.HB_OT_LAYOUT_DEFAULT_LANGUAGE_INDEX,
+      start,
+      addr count,
+      addr tags[0],
+    )
+    for i in 0 ..< int(count):
+      result.add Tag(tags[i])
+    if fetched == 0 or count < chunkSize:
+      break
+    start += count
+
+proc substitutionFeatureTags*(face: Face): seq[Tag] =
+  layoutFeatureTags(face, tableGsub)
+
+proc positioningFeatureTags*(face: Face): seq[Tag] =
+  layoutFeatureTags(face, tableGpos)
+
 proc initFont*(face: Face, useOpenTypeFuncs = true): Font =
   result.handle = raw.hb_font_create(face.requireFace)
   if result.handle == nil:
@@ -886,12 +1076,46 @@ proc horizontalExtents*(font: Font): FontExtents =
     ascender: extents.ascender, descender: extents.descender, lineGap: extents.lineGap
   )
 
+proc verticalExtents*(font: Font): FontExtents =
+  var extents: raw.HbFontExtents
+  if not raw.hb_font_get_v_extents(font.requireFont, addr extents).boolValue:
+    raise newException(ValueError, "font has no vertical extents")
+  FontExtents(
+    ascender: extents.ascender, descender: extents.descender, lineGap: extents.lineGap
+  )
+
+proc extents*(font: Font, direction: Direction): FontExtents =
+  var extents: raw.HbFontExtents
+  raw.hb_font_get_extents_for_direction(font.requireFont, direction.toRaw, addr extents)
+  FontExtents(
+    ascender: extents.ascender, descender: extents.descender, lineGap: extents.lineGap
+  )
+
+func lineAdvance*(extents: FontExtents): Position =
+  extents.ascender - extents.descender + extents.lineGap
+
 proc nominalGlyph*(font: Font, codepoint: Codepoint): Codepoint =
   if not raw.hb_font_get_nominal_glyph(font.requireFont, codepoint, addr result).boolValue:
     raise newException(ValueError, "font has no glyph for codepoint " & $codepoint)
 
+proc glyph*(
+    font: Font, codepoint: Codepoint, variationSelector: Codepoint = 0
+): Codepoint =
+  if not raw.hb_font_get_glyph(
+    font.requireFont, codepoint, variationSelector, addr result
+  ).boolValue:
+    raise newException(ValueError, "font has no glyph for codepoint " & $codepoint)
+
 proc horizontalAdvance*(font: Font, glyph: Codepoint): Position =
   raw.hb_font_get_glyph_h_advance(font.requireFont, glyph)
+
+proc verticalAdvance*(font: Font, glyph: Codepoint): Position =
+  raw.hb_font_get_glyph_v_advance(font.requireFont, glyph)
+
+proc advance*(font: Font, glyph: Codepoint, direction: Direction): Advance =
+  raw.hb_font_get_glyph_advance_for_direction(
+    font.requireFont, glyph, direction.toRaw, addr result.x, addr result.y
+  )
 
 proc glyphExtents*(font: Font, glyph: Codepoint): GlyphExtents =
   var extents: raw.HbGlyphExtents
@@ -903,6 +1127,18 @@ proc glyphExtents*(font: Font, glyph: Codepoint): GlyphExtents =
     width: extents.width,
     height: extents.height,
   )
+
+proc toEm*(face: Face, value: Position): float =
+  let units = face.upem
+  if units <= 0:
+    raise newException(ValueError, "face has no units-per-em value")
+  float(value) / float(units)
+
+proc fromEm*(face: Face, value: float): Position =
+  let units = face.upem
+  if units <= 0:
+    raise newException(ValueError, "face has no units-per-em value")
+  Position(value * float(units))
 
 proc initTypeface*(face: Face, useOpenTypeFuncs = true, scaleToUpem = true): Typeface =
   result.face = face
@@ -963,6 +1199,12 @@ proc setFlags*(buffer: var Buffer, flags: BufferFlags) =
 proc flags*(buffer: Buffer): BufferFlags =
   raw.hb_buffer_get_flags(buffer.requireBuffer).toFlags
 
+proc setClusterLevel*(buffer: var Buffer, level: ClusterLevel) =
+  raw.hb_buffer_set_cluster_level(buffer.requireBuffer, level.toRaw)
+
+proc clusterLevel*(buffer: Buffer): ClusterLevel =
+  raw.hb_buffer_get_cluster_level(buffer.requireBuffer).toClusterLevel
+
 proc add*(buffer: var Buffer, codepoint: Codepoint, cluster: Natural = 0) =
   raw.hb_buffer_add(buffer.requireBuffer, codepoint, checkedCuint(cluster, "cluster"))
 
@@ -1009,6 +1251,48 @@ proc glyphPositions*(buffer: Buffer): seq[GlyphPosition] =
 proc hasPositions*(buffer: Buffer): bool =
   raw.hb_buffer_has_positions(buffer.requireBuffer).boolValue
 
+proc availableSerializeFormats*(): seq[string] =
+  let formats = raw.hb_buffer_serialize_list_formats()
+  if formats == nil:
+    return
+  var index = 0
+  while formats[index] != nil:
+    result.add $formats[index]
+    inc index
+
+proc serializeGlyphs*(
+    buffer: Buffer,
+    font: Font,
+    format = SerializeFormat.text,
+    flags: SerializeFlags = {},
+): string =
+  let total = buffer.len
+  if total == 0:
+    return ""
+  var start = 0
+  var chunkSize = 4096
+  while start < total:
+    var chunk = newString(chunkSize)
+    var consumed: cuint
+    let serialized = raw.hb_buffer_serialize_glyphs(
+      buffer.requireBuffer,
+      checkedCuint(start, "serialization start"),
+      checkedCuint(total, "serialization end"),
+      cast[cstring](addr chunk[0]),
+      checkedCuint(chunk.len, "serialization buffer length"),
+      addr consumed,
+      font.requireFont,
+      format.toRaw,
+      flags.toRaw,
+    )
+    if consumed == 0 and serialized == 0:
+      chunkSize *= 2
+      if chunkSize > 1_048_576:
+        raise newException(ValueError, "HarfBuzz buffer serialization made no progress")
+      continue
+    result.add chunk[0 ..< int(consumed)]
+    start += int(serialized)
+
 proc applyShapeOptions*(buffer: var Buffer, options: ShapeOptions) =
   if options.direction != Direction.invalid:
     buffer.setDirection(options.direction)
@@ -1018,6 +1302,7 @@ proc applyShapeOptions*(buffer: var Buffer, options: ShapeOptions) =
     buffer.setLanguage(options.language)
   if options.flags != {}:
     buffer.setFlags(options.flags)
+  buffer.setClusterLevel(options.clusterLevel)
   buffer.guessSegmentProperties()
 
 proc shape*(font: Font, buffer: var Buffer, features: openArray[Feature] = []) =
@@ -1033,6 +1318,129 @@ proc shape*(font: Font, buffer: var Buffer, features: openArray[Feature] = []) =
       addr rawFeatures[0],
       checkedCuint(rawFeatures.len, "feature count"),
     )
+
+proc shapeFull*(
+    font: Font,
+    buffer: var Buffer,
+    features: openArray[Feature] = [],
+    shapers: openArray[string] = [],
+) =
+  if shapers.len == 0:
+    shape(font, buffer, features)
+    return
+
+  var rawFeatures = newSeq[raw.HbFeature](features.len)
+  for i, feature in features:
+    rawFeatures[i] = feature.toRaw
+  let shaperList = allocCStringArray(shapers)
+  try:
+    let featurePtr =
+      if rawFeatures.len == 0:
+        cast[ptr raw.HbFeature](nil)
+      else:
+        addr rawFeatures[0]
+    if not raw.hb_shape_full(
+      font.requireFont,
+      buffer.requireBuffer,
+      featurePtr,
+      checkedCuint(rawFeatures.len, "feature count"),
+      shaperList,
+    ).boolValue:
+      raise newException(ValueError, "HarfBuzz could not shape with requested shapers")
+  finally:
+    deallocCStringArray(shaperList)
+
+proc availableShapers*(): seq[string] =
+  let shapers = raw.hb_shape_list_shapers()
+  if shapers == nil:
+    return
+  var index = 0
+  while shapers[index] != nil:
+    result.add $shapers[index]
+    inc index
+
+proc initShapePlan*(face: Face, options: ShapeOptions, cached = true): ShapePlan =
+  var props = raw.HbSegmentProperties(
+    direction: (
+      if options.direction == Direction.invalid: Direction.ltr else: options.direction
+    ).toRaw,
+    script: (
+      if raw.HbScript(options.script) == raw.HB_SCRIPT_INVALID:
+        raw.HB_SCRIPT_UNKNOWN
+      else:
+        raw.HbScript(options.script)
+    ),
+    language: (
+      if raw.HbLanguage(options.language) == raw.HB_LANGUAGE_INVALID:
+        raw.HbLanguage(defaultLanguage())
+      else:
+        raw.HbLanguage(options.language)
+    ),
+  )
+  var rawFeatures = newSeq[raw.HbFeature](options.features.len)
+  for i, feature in options.features:
+    rawFeatures[i] = feature.toRaw
+  let shaperList =
+    if options.shapers.len == 0:
+      cast[cstringArray](nil)
+    else:
+      allocCStringArray(options.shapers)
+  try:
+    let featurePtr =
+      if rawFeatures.len == 0:
+        cast[ptr raw.HbFeature](nil)
+      else:
+        addr rawFeatures[0]
+    result.handle =
+      if cached:
+        raw.hb_shape_plan_create_cached(
+          face.requireFace,
+          addr props,
+          featurePtr,
+          checkedCuint(rawFeatures.len, "feature count"),
+          shaperList,
+        )
+      else:
+        raw.hb_shape_plan_create(
+          face.requireFace,
+          addr props,
+          featurePtr,
+          checkedCuint(rawFeatures.len, "feature count"),
+          shaperList,
+        )
+    if result.handle == nil:
+      raise newException(ValueError, "could not create HarfBuzz shape plan")
+  finally:
+    if shaperList != nil:
+      deallocCStringArray(shaperList)
+
+proc initShapePlan*(
+    typeface: Typeface, options: ShapeOptions, cached = true
+): ShapePlan =
+  initShapePlan(typeface.face, options, cached)
+
+proc execute*(
+    plan: ShapePlan, font: Font, buffer: var Buffer, features: openArray[Feature] = []
+) =
+  var rawFeatures = newSeq[raw.HbFeature](features.len)
+  for i, feature in features:
+    rawFeatures[i] = feature.toRaw
+  let featurePtr =
+    if rawFeatures.len == 0:
+      cast[ptr raw.HbFeature](nil)
+    else:
+      addr rawFeatures[0]
+  if not raw.hb_shape_plan_execute(
+    plan.requirePlan,
+    font.requireFont,
+    buffer.requireBuffer,
+    featurePtr,
+    checkedCuint(rawFeatures.len, "feature count"),
+  ).boolValue:
+    raise newException(ValueError, "HarfBuzz shape plan execution failed")
+
+proc shaper*(plan: ShapePlan): string =
+  fromCString(raw.hb_shape_plan_get_shaper(plan.requirePlan))
 
 proc toGlyphRun*(buffer: Buffer): GlyphRun =
   var infoLength: cuint
@@ -1066,7 +1474,7 @@ proc shapeText*(font: Font, text: string, options = ShapeOptions()): GlyphRun =
   var buffer = initBuffer()
   buffer.addUtf8(text)
   buffer.applyShapeOptions(options)
-  shape(font, buffer, options.features)
+  shapeFull(font, buffer, options.features, options.shapers)
   buffer.toGlyphRun()
 
 proc shape*(font: Font, text: string, options = ShapeOptions()): GlyphRun =
@@ -1077,6 +1485,30 @@ proc shapeText*(typeface: Typeface, text: string, options = ShapeOptions()): Gly
 
 proc shape*(typeface: Typeface, text: string, options = ShapeOptions()): GlyphRun =
   shapeText(typeface, text, options)
+
+proc shapeText*(
+    font: Font, text: string, plan: ShapePlan, options = ShapeOptions()
+): GlyphRun =
+  var buffer = initBuffer()
+  buffer.addUtf8(text)
+  buffer.applyShapeOptions(options)
+  execute(plan, font, buffer, options.features)
+  buffer.toGlyphRun()
+
+proc shape*(
+    font: Font, text: string, plan: ShapePlan, options = ShapeOptions()
+): GlyphRun =
+  shapeText(font, text, plan, options)
+
+proc shapeText*(
+    typeface: Typeface, text: string, plan: ShapePlan, options = ShapeOptions()
+): GlyphRun =
+  shapeText(typeface.font, text, plan, options)
+
+proc shape*(
+    typeface: Typeface, text: string, plan: ShapePlan, options = ShapeOptions()
+): GlyphRun =
+  shapeText(typeface, text, plan, options)
 
 proc shapeRun*(
     font: Font, text: string, run: TextRun, options = ShapeOptions()
@@ -1095,10 +1527,11 @@ proc shapeRun*(
     buffer.setLanguage(run.language)
   if options.flags != {}:
     buffer.setFlags(options.flags)
+  buffer.setClusterLevel(options.clusterLevel)
   buffer.guessSegmentProperties()
 
   let features = if run.features.len > 0: run.features else: options.features
-  shape(font, buffer, features)
+  shapeFull(font, buffer, features, options.shapers)
 
   result = ShapedRun(textRun: run, glyphRun: buffer.toGlyphRun())
   let clusterOffset = uint32(run.byteStart)
@@ -1123,6 +1556,8 @@ proc shapeParagraph*(
       script = run.script,
       language = run.language,
       flags = options.flags,
+      shapers = options.shapers,
+      clusterLevel = options.clusterLevel,
     )
     result.logicalRuns[index] = shapeRun(font, text, run, shapeOptions)
 
@@ -1252,6 +1687,6 @@ proc initSubsetPlan*(face: Face, input: SubsetInput): SubsetPlan =
     raise newException(ValueError, "could not create HarfBuzz subset plan")
 
 proc execute*(plan: SubsetPlan): Face =
-  result.handle = raw.hb_subset_plan_execute_or_fail(plan.requirePlan)
+  result.handle = raw.hb_subset_plan_execute_or_fail(plan.requireSubsetPlan)
   if result.handle == nil:
     raise newException(ValueError, "HarfBuzz subset plan execution failed")

@@ -88,17 +88,17 @@ Likely public types:
 
 ### P1 - Improve Shaping Quality And Controls
 
-- [ ] Expose buffer cluster level in the high-level API.
-- [ ] Add `shapeFull` support with explicit shaper lists.
-- [ ] Add `shapePlan` wrappers and caching for repeated shaping with the same
+- [x] Expose buffer cluster level in the high-level API.
+- [x] Add `shapeFull` support with explicit shaper lists.
+- [x] Add `shapePlan` wrappers and caching for repeated shaping with the same
   face/script/language/features.
-- [ ] Add script itemization helpers for runs where the caller does not provide
+- [x] Add script itemization helpers for runs where the caller does not provide
   script.
-- [ ] Add language handling per run, with sensible defaults.
-- [ ] Add OpenType feature discovery wrappers from `hb-ot-layout`.
-- [ ] Add font metrics helpers needed by layout callers: line extents, glyph
+- [x] Add language handling per run, with sensible defaults.
+- [x] Add OpenType feature discovery wrappers from `hb-ot-layout`.
+- [x] Add font metrics helpers needed by layout callers: line extents, glyph
   extents, advances, and scale conversions.
-- [ ] Add debug serialization of shaped buffers for test fixtures and issue
+- [x] Add debug serialization of shaped buffers for test fixtures and issue
   reports.
 
 ### P2 - Make Paragraph Shaping Practical In Real Apps

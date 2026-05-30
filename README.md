@@ -37,6 +37,25 @@ Clusters are byte offsets into the original UTF-8 input string. HarfBuzz itself
 does not implement the Unicode Bidirectional Algorithm; the paragraph API runs
 that step before shaping.
 
+More shaping controls are available when needed:
+
+```nim
+let options = initShapeOptions(
+  direction = Direction.ltr,
+  script = scriptLatin,
+  language = toLanguage("en"),
+  features = [toFeature("kern=0")],
+  shapers = ["ot"],
+  clusterLevel = ClusterLevel.characters,
+)
+
+let plan = initShapePlan(typeface, options)
+let plannedRun = typeface.shape("hello", plan, options)
+
+echo typeface.face.substitutionFeatureTags()
+echo typeface.font.horizontalExtents().lineAdvance
+```
+
 ## Build
 
 Install dependencies with Atlas:
