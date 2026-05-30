@@ -6,7 +6,7 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
       "harfbuzzy requires --mm:arc, --mm:orc, or --mm:atomicArc for deterministic HarfBuzz handle destructors"
   .}
 
-import harfbuzzy/raw
+import harfbuzzy/[fribidi_raw, raw]
 
 type
   Blob* = object
@@ -219,6 +219,33 @@ type
   GlyphRun* = object
     glyphs*: seq[Glyph]
 
+  ParagraphDirection* {.pure.} = enum
+    autoDetect
+    ltr
+    rtl
+
+  BidiLevel* = distinct uint8
+
+  TextRun* = object
+    byteStart*: int
+    byteEnd*: int
+    codepointStart*: int
+    codepointEnd*: int
+    direction*: Direction
+    level*: BidiLevel
+    script*: Script
+    language*: Language
+    features*: seq[Feature]
+
+  ShapedRun* = object
+    textRun*: TextRun
+    glyphRun*: GlyphRun
+
+  ShapedParagraph* = object
+    baseDirection*: Direction
+    logicalRuns*: seq[ShapedRun]
+    visualRuns*: seq[ShapedRun]
+
   ShapeOptions* = object
     direction*: Direction
     script*: Script
@@ -226,9 +253,24 @@ type
     features*: seq[Feature]
     flags*: BufferFlags
 
+  ParagraphOptions* = object
+    baseDirection*: ParagraphDirection
+    language*: Language
+    features*: seq[Feature]
+    flags*: BufferFlags
+
   Typeface* = object
     face*: Face
     font*: Font
+
+  DecodedText = object
+    codepoints: seq[Codepoint]
+    byteStarts: seq[int]
+    byteEnds: seq[int]
+
+  BidiAnalysis = object
+    baseDirection: Direction
+    runs: seq[TextRun]
 
 const
   versionMajor* = raw.HB_VERSION_MAJOR
@@ -241,6 +283,7 @@ const
   scriptInherited* = Script(raw.HB_SCRIPT_INHERITED)
   scriptUnknown* = Script(raw.HB_SCRIPT_UNKNOWN)
   scriptArabic* = Script(raw.HB_SCRIPT_ARABIC)
+  scriptHebrew* = Script(raw.hbTag('H', 'e', 'b', 'r'))
   scriptLatin* = Script(raw.HB_SCRIPT_LATIN)
   scriptInvalid* = Script(raw.HB_SCRIPT_INVALID)
   languageInvalid* = Language(raw.HB_LANGUAGE_INVALID)
@@ -483,6 +526,206 @@ proc initShapeOptions*(
     features: @features,
     flags: flags,
   )
+
+proc initParagraphOptions*(
+    baseDirection = ParagraphDirection.autoDetect,
+    language = languageInvalid,
+    features: openArray[Feature] = [],
+    flags: BufferFlags = {},
+): ParagraphOptions =
+  ParagraphOptions(
+    baseDirection: baseDirection, language: language, features: @features, flags: flags
+  )
+
+proc byteValue(text: string, index: int): uint8 =
+  uint8(ord(text[index]))
+
+proc continuationValue(text: string, index: int): uint32 =
+  if index >= text.len:
+    raise newException(ValueError, "malformed UTF-8: truncated sequence")
+  let value = byteValue(text, index)
+  if (value and 0xC0'u8) != 0x80'u8:
+    raise newException(ValueError, "malformed UTF-8: invalid continuation byte")
+  uint32(value and 0x3F'u8)
+
+proc addDecoded(decoded: var DecodedText, codepoint: uint32, byteStart, byteEnd: int) =
+  if codepoint > 0x10FFFF'u32 or (codepoint >= 0xD800'u32 and codepoint <= 0xDFFF'u32):
+    raise newException(ValueError, "malformed UTF-8: invalid Unicode scalar value")
+  decoded.codepoints.add Codepoint(codepoint)
+  decoded.byteStarts.add byteStart
+  decoded.byteEnds.add byteEnd
+
+proc decodeUtf8(text: string): DecodedText =
+  var index = 0
+  while index < text.len:
+    let start = index
+    let first = byteValue(text, index)
+    if first < 0x80'u8:
+      inc index
+      result.addDecoded(uint32(first), start, index)
+    elif (first and 0xE0'u8) == 0xC0'u8:
+      if first < 0xC2'u8:
+        raise newException(ValueError, "malformed UTF-8: overlong sequence")
+      let codepoint =
+        ((uint32(first and 0x1F'u8) shl 6) or continuationValue(text, index + 1))
+      index += 2
+      result.addDecoded(codepoint, start, index)
+    elif (first and 0xF0'u8) == 0xE0'u8:
+      let second = continuationValue(text, index + 1)
+      let codepoint = (
+        (uint32(first and 0x0F'u8) shl 12) or (second shl 6) or
+        continuationValue(text, index + 2)
+      )
+      if codepoint < 0x800'u32:
+        raise newException(ValueError, "malformed UTF-8: overlong sequence")
+      index += 3
+      result.addDecoded(codepoint, start, index)
+    elif (first and 0xF8'u8) == 0xF0'u8:
+      let codepoint = (
+        (uint32(first and 0x07'u8) shl 18) or (
+          continuationValue(text, index + 1) shl 12
+        ) or (continuationValue(text, index + 2) shl 6) or
+        continuationValue(text, index + 3)
+      )
+      if codepoint < 0x10000'u32:
+        raise newException(ValueError, "malformed UTF-8: overlong sequence")
+      index += 4
+      result.addDecoded(codepoint, start, index)
+    else:
+      raise newException(ValueError, "malformed UTF-8: invalid leading byte")
+
+func toFriBidiPar(direction: ParagraphDirection): fribidi_raw.FriBidiParType =
+  case direction
+  of ParagraphDirection.autoDetect: fribidi_raw.FRIBIDI_PAR_ON
+  of ParagraphDirection.ltr: fribidi_raw.FRIBIDI_PAR_LTR
+  of ParagraphDirection.rtl: fribidi_raw.FRIBIDI_PAR_RTL
+
+func levelDirection(level: fribidi_raw.FriBidiLevel): Direction =
+  if fribidi_raw.fribidi_level_is_rtl(level): Direction.rtl else: Direction.ltr
+
+func baseDirection(base: fribidi_raw.FriBidiParType): Direction =
+  if base == fribidi_raw.FRIBIDI_PAR_RTL or base == fribidi_raw.FRIBIDI_PAR_WRTL:
+    Direction.rtl
+  else:
+    Direction.ltr
+
+func levelValue*(level: BidiLevel): int =
+  int(uint8(level))
+
+func direction*(level: BidiLevel): Direction =
+  if (level.levelValue and 1) == 0: Direction.ltr else: Direction.rtl
+
+func isArabicCodepoint(codepoint: Codepoint): bool =
+  (codepoint >= 0x0600'u32 and codepoint <= 0x06FF'u32) or
+    (codepoint >= 0x0750'u32 and codepoint <= 0x077F'u32) or
+    (codepoint >= 0x08A0'u32 and codepoint <= 0x08FF'u32) or
+    (codepoint >= 0xFB50'u32 and codepoint <= 0xFDFF'u32) or
+    (codepoint >= 0xFE70'u32 and codepoint <= 0xFEFF'u32)
+
+func isHebrewCodepoint(codepoint: Codepoint): bool =
+  codepoint >= 0x0590'u32 and codepoint <= 0x05FF'u32
+
+func isLatinCodepoint(codepoint: Codepoint): bool =
+  (codepoint >= 0x0041'u32 and codepoint <= 0x005A'u32) or
+    (codepoint >= 0x0061'u32 and codepoint <= 0x007A'u32) or
+    (codepoint >= 0x00C0'u32 and codepoint <= 0x024F'u32)
+
+func inferScript(text: openArray[Codepoint], first, last: int): Script =
+  for index in first ..< last:
+    let codepoint = text[index]
+    if isArabicCodepoint(codepoint):
+      return scriptArabic
+    if isHebrewCodepoint(codepoint):
+      return scriptHebrew
+    if isLatinCodepoint(codepoint):
+      return scriptLatin
+  scriptUnknown
+
+proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
+  let decoded = decodeUtf8(text)
+  if decoded.codepoints.len == 0:
+    result.baseDirection =
+      if options.baseDirection == ParagraphDirection.rtl:
+        Direction.rtl
+      else:
+        Direction.ltr
+    return
+
+  let length = checkedCint(decoded.codepoints.len, "codepoint count")
+  var bidiTypes = newSeq[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
+  var bracketTypes = newSeq[fribidi_raw.FriBidiBracketType](decoded.codepoints.len)
+  var levels = newSeq[fribidi_raw.FriBidiLevel](decoded.codepoints.len)
+  var base = options.baseDirection.toFriBidiPar
+
+  fribidi_raw.fribidi_get_bidi_types(
+    unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0]
+  )
+  fribidi_raw.fribidi_get_bracket_types(
+    unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0], addr bracketTypes[0]
+  )
+  let maxLevel = fribidi_raw.fribidi_get_par_embedding_levels_ex(
+    addr bidiTypes[0], addr bracketTypes[0], length, addr base, addr levels[0]
+  )
+  if maxLevel == 0:
+    raise newException(ValueError, "FriBidi could not resolve embedding levels")
+
+  result.baseDirection = base.baseDirection
+  var first = 0
+  while first < levels.len:
+    var last = first + 1
+    while last < levels.len and levels[last] == levels[first]:
+      inc last
+    result.runs.add TextRun(
+      byteStart: decoded.byteStarts[first],
+      byteEnd: decoded.byteEnds[last - 1],
+      codepointStart: first,
+      codepointEnd: last,
+      direction: levels[first].levelDirection,
+      level: BidiLevel(uint8(levels[first])),
+      script: inferScript(decoded.codepoints, first, last),
+      language: options.language,
+      features: options.features,
+    )
+    first = last
+
+proc bidiRuns*(text: string, options = ParagraphOptions()): seq[TextRun] =
+  analyzeBidi(text, options).runs
+
+proc reverseRange[T](values: var seq[T], first, last: int) =
+  var left = first
+  var right = last - 1
+  while left < right:
+    swap values[left], values[right]
+    inc left
+    dec right
+
+func visualOrderIndices(runs: openArray[TextRun]): seq[int] =
+  result = newSeq[int](runs.len)
+  if runs.len == 0:
+    return
+  var maxLevel = 0
+  var minOddLevel = int.high
+  for index, run in runs:
+    result[index] = index
+    let level = run.level.levelValue
+    if level > maxLevel:
+      maxLevel = level
+    if (level and 1) == 1 and level < minOddLevel:
+      minOddLevel = level
+  if minOddLevel == int.high:
+    return
+  var level = maxLevel
+  while level >= minOddLevel:
+    var index = 0
+    while index < result.len:
+      if runs[result[index]].level.levelValue >= level:
+        let first = index
+        while index < result.len and runs[result[index]].level.levelValue >= level:
+          inc index
+        result.reverseRange(first, index)
+      else:
+        inc index
+    dec level
 
 proc toRaw(feature: Feature): raw.HbFeature =
   raw.HbFeature(
@@ -835,6 +1078,64 @@ proc shapeText*(typeface: Typeface, text: string, options = ShapeOptions()): Gly
 proc shape*(typeface: Typeface, text: string, options = ShapeOptions()): GlyphRun =
   shapeText(typeface, text, options)
 
+proc shapeRun*(
+    font: Font, text: string, run: TextRun, options = ShapeOptions()
+): ShapedRun =
+  if run.byteStart < 0 or run.byteEnd < run.byteStart or run.byteEnd > text.len:
+    raise newException(ValueError, "text run byte range is outside the input text")
+  if run.byteStart > int(uint32.high):
+    raise newException(ValueError, "text run byte start does not fit glyph clusters")
+
+  var buffer = initBuffer()
+  buffer.addUtf8(text[run.byteStart ..< run.byteEnd])
+  buffer.setDirection(run.direction)
+  if raw.HbScript(run.script) != raw.HB_SCRIPT_INVALID:
+    buffer.setScript(run.script)
+  if raw.HbLanguage(run.language) != raw.HB_LANGUAGE_INVALID:
+    buffer.setLanguage(run.language)
+  if options.flags != {}:
+    buffer.setFlags(options.flags)
+  buffer.guessSegmentProperties()
+
+  let features = if run.features.len > 0: run.features else: options.features
+  shape(font, buffer, features)
+
+  result = ShapedRun(textRun: run, glyphRun: buffer.toGlyphRun())
+  let clusterOffset = uint32(run.byteStart)
+  for glyph in result.glyphRun.glyphs.mitems:
+    glyph.cluster += clusterOffset
+
+proc shapeRun*(
+    typeface: Typeface, text: string, run: TextRun, options = ShapeOptions()
+): ShapedRun =
+  shapeRun(typeface.font, text, run, options)
+
+proc shapeParagraph*(
+    font: Font, text: string, options = ParagraphOptions()
+): ShapedParagraph =
+  let analysis = analyzeBidi(text, options)
+  result.baseDirection = analysis.baseDirection
+  result.logicalRuns = newSeq[ShapedRun](analysis.runs.len)
+  for index, run in analysis.runs:
+    let shapeOptions = initShapeOptions(
+      features = run.features,
+      direction = run.direction,
+      script = run.script,
+      language = run.language,
+      flags = options.flags,
+    )
+    result.logicalRuns[index] = shapeRun(font, text, run, shapeOptions)
+
+  let visualIndices = visualOrderIndices(analysis.runs)
+  result.visualRuns = newSeq[ShapedRun](visualIndices.len)
+  for outputIndex, runIndex in visualIndices:
+    result.visualRuns[outputIndex] = result.logicalRuns[runIndex]
+
+proc shapeParagraph*(
+    typeface: Typeface, text: string, options = ParagraphOptions()
+): ShapedParagraph =
+  shapeParagraph(typeface.font, text, options)
+
 func len*(run: GlyphRun): int =
   run.glyphs.len
 
@@ -846,6 +1147,29 @@ func totalAdvance*(run: GlyphRun): Advance =
   for glyph in run.glyphs:
     result.x += glyph.xAdvance
     result.y += glyph.yAdvance
+
+func len*(run: ShapedRun): int =
+  run.glyphRun.len
+
+iterator items*(run: ShapedRun): lent Glyph =
+  for glyph in run.glyphRun:
+    yield glyph
+
+func len*(paragraph: ShapedParagraph): int =
+  paragraph.visualRuns.len
+
+iterator items*(paragraph: ShapedParagraph): lent ShapedRun =
+  for run in paragraph.visualRuns:
+    yield run
+
+func totalAdvance*(run: ShapedRun): Advance =
+  run.glyphRun.totalAdvance
+
+func totalAdvance*(paragraph: ShapedParagraph): Advance =
+  for run in paragraph.visualRuns:
+    let advance = run.totalAdvance
+    result.x += advance.x
+    result.y += advance.y
 
 proc initSet*(): Set =
   result.handle = raw.hb_set_create()

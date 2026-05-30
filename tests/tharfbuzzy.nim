@@ -1,9 +1,13 @@
 import std/[os, unittest]
 
 import harfbuzzy
+import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
 
 const fixtureFont = "deps/luaharfbuzz/fonts/Rajdhani-Regular.ttf"
+const arabicFixtureFont = "deps/luaharfbuzz/fonts/amiri-regular.ttf"
+const hebrewText = "\u05E9\u05DC\u05D5\u05DD"
+const arabicText = "\u0633\u0644\u0627\u0645"
 
 suite "harfbuzzy raw bindings":
   test "value struct layouts match HarfBuzz headers":
@@ -15,6 +19,10 @@ suite "harfbuzzy raw bindings":
     check sizeof(raw.HbGlyphInfo) == 20
     check sizeof(raw.HbGlyphPosition) == 20
     check sizeof(raw.HbFontExtents) == 48
+    check sizeof(fribidi_raw.FriBidiChar) == 4
+    check sizeof(fribidi_raw.FriBidiCharType) == 4
+    check sizeof(fribidi_raw.FriBidiParType) == 4
+    check sizeof(fribidi_raw.FriBidiLevel) == 1
 
   test "version symbols are callable":
     check versionString().len > 0
@@ -85,6 +93,58 @@ suite "harfbuzzy wrapper":
     check run.totalAdvance.x > 0
     for glyph in run:
       check glyph.codepoint != 0
+
+  test "bidi run segmentation handles ltr, rtl, and invalid input":
+    let ltrRuns = bidiRuns("hello")
+    check ltrRuns.len == 1
+    check ltrRuns[0].direction == Direction.ltr
+    check ltrRuns[0].byteStart == 0
+    check ltrRuns[0].byteEnd == "hello".len
+
+    let rtlRuns = bidiRuns(hebrewText)
+    check rtlRuns.len == 1
+    check rtlRuns[0].direction == Direction.rtl
+    check $rtlRuns[0].script == "Hebr"
+    check rtlRuns[0].byteStart == 0
+    check rtlRuns[0].byteEnd == hebrewText.len
+
+    expect ValueError:
+      discard bidiRuns("\xFF")
+
+  test "paragraph shaping returns logical and visual runs":
+    check fileExists(arabicFixtureFont)
+    let typeface = typefaceFromFile(arabicFixtureFont)
+    let text = "abc (" & arabicText & " 123) xyz"
+    let paragraph = typeface.shapeParagraph(text)
+
+    check paragraph.baseDirection == Direction.ltr
+    check paragraph.logicalRuns.len >= 2
+    check paragraph.visualRuns.len == paragraph.logicalRuns.len
+    check paragraph.totalAdvance.x > 0
+
+    var hasRtl = false
+    for run in paragraph.logicalRuns:
+      if run.textRun.direction == Direction.rtl:
+        hasRtl = true
+      check run.textRun.byteStart >= 0
+      check run.textRun.byteEnd <= text.len
+      check run.len > 0
+      for glyph in run:
+        check glyph.cluster >= uint32(run.textRun.byteStart)
+        check glyph.cluster < uint32(run.textRun.byteEnd)
+    check hasRtl
+
+  test "rtl paragraph with digits and neutral punctuation shapes visually":
+    check fileExists(arabicFixtureFont)
+    let typeface = typefaceFromFile(arabicFixtureFont)
+    let text = arabicText & " (123) abc"
+    let options = initParagraphOptions(baseDirection = ParagraphDirection.rtl)
+    let paragraph = typeface.shapeParagraph(text, options)
+
+    check paragraph.baseDirection == Direction.rtl
+    check paragraph.logicalRuns.len >= 2
+    check paragraph.visualRuns.len == paragraph.logicalRuns.len
+    check paragraph.totalAdvance.x > 0
 
   test "subset input owns only the input, not its borrowed sets":
     check fileExists(fixtureFont)

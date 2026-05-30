@@ -70,20 +70,20 @@ Likely public types:
 
 ### P0 - Make Shaping Plus Bidi Usable
 
-- [ ] Add a clear `ParagraphDirection` and `BidiLevel` API.
-- [ ] Choose the bidi backend. Default recommendation: FriBidi raw bindings plus
+- [x] Add a clear `ParagraphDirection` and `BidiLevel` API.
+- [x] Choose the bidi backend. Default recommendation: FriBidi raw bindings plus
   a small ergonomic wrapper.
-- [ ] Add bidi run segmentation for UTF-8 input with stable source cluster
+- [x] Add bidi run segmentation for UTF-8 input with stable source cluster
   offsets.
-- [ ] Add `TextRun`, `ShapedRun`, and `ShapedParagraph` public types.
-- [ ] Add `shapeRun(typeface, text, run, options)` for one directional run.
-- [ ] Add `shapeParagraph(typeface, text, options)` for mixed-direction text.
-- [ ] Return both logical and visual run order.
-- [ ] Preserve cluster mapping back to the original input string.
-- [ ] Add tests for LTR-only, RTL-only, and mixed English plus Hebrew/Arabic
+- [x] Add `TextRun`, `ShapedRun`, and `ShapedParagraph` public types.
+- [x] Add `shapeRun(typeface, text, run, options)` for one directional run.
+- [x] Add `shapeParagraph(typeface, text, options)` for mixed-direction text.
+- [x] Return both logical and visual run order.
+- [x] Preserve cluster mapping back to the original input string.
+- [x] Add tests for LTR-only, RTL-only, and mixed English plus Hebrew/Arabic
   paragraphs.
-- [ ] Add tests with numbers and neutral punctuation inside RTL text.
-- [ ] Document that bidi is paragraph-level processing around HarfBuzz, not a
+- [x] Add tests with numbers and neutral punctuation inside RTL text.
+- [x] Document that bidi is paragraph-level processing around HarfBuzz, not a
   HarfBuzz-only feature.
 
 ### P1 - Improve Shaping Quality And Controls

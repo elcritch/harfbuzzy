@@ -22,6 +22,21 @@ for glyph in run:
   echo glyph.codepoint, " cluster=", glyph.cluster
 ```
 
+For mixed-direction paragraphs, `harfbuzzy` uses FriBidi for paragraph-level
+bidi analysis and HarfBuzz for shaping each directional run:
+
+```nim
+let paragraph = typeface.shapeParagraph("abc \u05E9\u05DC\u05D5\u05DD 123")
+
+for run in paragraph.visualRuns:
+  for glyph in run:
+    echo glyph.codepoint, " cluster=", glyph.cluster
+```
+
+Clusters are byte offsets into the original UTF-8 input string. HarfBuzz itself
+does not implement the Unicode Bidirectional Algorithm; the paragraph API runs
+that step before shaping.
+
 ## Build
 
 Install dependencies with Atlas:
@@ -40,13 +55,14 @@ nim test
 types own HarfBuzz handles with Nim destructors, so callers do not call
 `hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
 
-The raw module includes headers from `deps/harfbuzz/src` and dynamically loads
-`libharfbuzz` plus `libharfbuzz-subset`. On macOS it uses Homebrew's
-`brew --prefix harfbuzz` when available. Override library paths when needed:
+The raw modules include headers from `deps/harfbuzz/src` and dynamically load
+`libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On macOS they use
+Homebrew prefixes when available. Override library paths when needed:
 
 ```sh
 nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
   -d:harfbuzzySubsetDynlib=/path/to/libharfbuzz-subset.dylib \
+  -d:harfbuzzyFribidiDynlib=/path/to/libfribidi.dylib \
   tests/tharfbuzzy.nim
 ```
 
