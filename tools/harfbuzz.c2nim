@@ -1,0 +1,46 @@
+// c2nim option file for the HarfBuzz public C headers.
+//
+// The generated output is treated as a seed for src/harfbuzzy/raw.nim, not as a
+// directly checked-in binding. HarfBuzz exposes many macro enums and macro
+// helpers that need Nim-side curation for ABI-safe distinct integer types.
+
+#cdecl
+#importc
+#stdints
+#skipinclude
+#mergeBlocks
+#mergeDuplicates
+#skipFuncDefines
+#importFuncDefines
+#reordercomments
+
+#prefix hb_
+#prefix HB_
+#prefix _hb_
+
+#assumedef HB_H_IN
+#assumedef HB_OT_H_IN
+#assumedef HB_AAT_H_IN
+#assumedef HB_SUBSET_H_IN
+#assumendef HB_EXPERIMENTAL_API
+
+#def HB_EXTERN extern
+#def HB_BEGIN_DECLS
+#def HB_END_DECLS
+#def HB_DEPRECATED
+#def HB_DEPRECATED_FOR(f)
+#def HB_EXTERN_C extern
+
+#mangle "'uint8_t'" "uint8"
+#mangle "'uint16_t'" "uint16"
+#mangle "'uint32_t'" "uint32"
+#mangle "'uint64_t'" "uint64"
+#mangle "'int8_t'" "int8"
+#mangle "'int16_t'" "int16"
+#mangle "'int32_t'" "int32"
+#mangle "'int64_t'" "int64"
+#mangle "'size_t'" "csize_t"
+
+#render nonNep1Imports
+#render extranewlines
+#render reindentlongcomments

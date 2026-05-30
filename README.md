@@ -1,51 +1,58 @@
 # harfbuzzy
 
-GitHub template repository for Nim packages using Atlas for dependency
-management and GitHub Actions for CI.
+Nim bindings for HarfBuzz, generated and curated against the vendored
+`deps/harfbuzz` 14.2.0 headers.
 
-## Use This Template
+The package has two layers:
 
-1. Create a new repository with GitHub's "Use this template" button.
-2. Clone the new repository locally.
-3. Pick the Nim package name you want to publish, using letters, numbers, and
-   underscores.
-4. Run:
+- `harfbuzzy/raw`: ABI-shaped C bindings for the core HarfBuzz, OpenType, AAT,
+  and subset entry points used by this package.
+- `harfbuzzy`: reference-counted Nim handle wrappers for blobs, faces, fonts,
+  buffers, sets, shaping, and subset input.
 
-```sh
-./scripts/rename_template.sh your_package_name
+## Example
+
+```nim
+import harfbuzzy
+
+var face = faceFromFile("font.ttf")
+var font = initFont(face)
+var buffer = initBuffer()
+
+buffer.addUtf8("hello")
+buffer.guessSegmentProperties()
+shape(font, buffer)
+
+for info in buffer.glyphInfos:
+  echo info.codepoint, " cluster=", info.cluster
 ```
 
-That updates the starter package/module/test filenames and rewrites the
-remaining `harfbuzzy` / `harfbuzzy` references in the template files.
+## Build
 
-## Setup
+Install dependencies with Atlas:
 
 ```sh
 atlas install
 ```
 
-Atlas writes dependency paths to `nim.cfg` and installs dependencies under
-`deps/`. Those files are intentionally ignored.
-
-## Test
-
-Run the full test suite:
+Run tests:
 
 ```sh
 nim test
 ```
 
-Run a single test:
+The raw module includes headers from `deps/harfbuzz/src` and dynamically loads
+`libharfbuzz` plus `libharfbuzz-subset`. On macOS it uses Homebrew's
+`brew --prefix harfbuzz` when available. Override library paths when needed:
 
 ```sh
-nim r tests/tyour_package_name.nim
+nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
+  -d:harfbuzzySubsetDynlib=/path/to/libharfbuzz-subset.dylib \
+  tests/tharfbuzzy.nim
 ```
 
-## Layout
+## Regenerating Raw Seeds
 
-- `src/your_package_name.nim`: package module after renaming.
-- `tests/tyour_package_name.nim`: unit tests after renaming.
-- `config.nims`: shared Nim switches and the `nim test` task.
-- `.github/workflows/ci.yml`: GitHub Actions CI.
-- `scripts/rename_template.sh`: one-shot template bootstrap rename.
-# harfbuzzy
+`tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
+`tools/harfbuzz.c2nim`. The generated file is a seed for review, not the final
+raw layer; HarfBuzz macros and enum domains still need manual curation.
