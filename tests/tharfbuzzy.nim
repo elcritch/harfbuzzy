@@ -1,8 +1,8 @@
 import std/unittest
 
-import nim_repo
+import harfbuzzy
 
-suite "nim_repo":
+suite "harfbuzzy":
   test "greets by name":
     check greet("Nim") == "hello, Nim"
 
