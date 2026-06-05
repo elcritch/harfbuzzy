@@ -9,7 +9,14 @@ import std/os
 const hbSourceDir =
   currentSourcePath().parentDir().parentDir().parentDir() / "deps" / "harfbuzz" / "src"
 
-{.passC: "-I" & hbSourceDir.}
+when dirExists(hbSourceDir):
+  {.passC: "-I" & hbSourceDir.}
+else:
+  const hbPkgConfigCflags = staticExec(
+    "sh -c 'if command -v pkg-config >/dev/null 2>&1; then pkg-config --cflags harfbuzz 2>/dev/null | tr -d \"\\n\"; fi'"
+  )
+  when hbPkgConfigCflags.len > 0:
+    {.passC: hbPkgConfigCflags.}
 
 const
   hbHeader = "hb.h"

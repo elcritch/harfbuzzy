@@ -4,10 +4,32 @@ import harfbuzzy
 import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
 
-const fixtureFont = "deps/luaharfbuzz/fonts/Rajdhani-Regular.ttf"
-const arabicFixtureFont = "deps/luaharfbuzz/fonts/amiri-regular.ttf"
-const hebrewText = "\u05E9\u05DC\u05D5\u05DD"
-const arabicText = "\u0633\u0644\u0627\u0645"
+proc findFixtureFont(paths: openArray[string]): string =
+  for path in paths:
+    if fileExists(path):
+      return path
+
+let fixtureFont = findFixtureFont(
+  [
+    "deps/luaharfbuzz/fonts/Rajdhani-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/Library/Fonts/Arial Unicode.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
+  ]
+)
+let arabicFixtureFont = findFixtureFont(
+  [
+    "deps/luaharfbuzz/fonts/amiri-regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+    "/System/Library/Fonts/Supplemental/AlBayan.ttc",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+  ]
+)
+
+const
+  hebrewText = "\u05E9\u05DC\u05D5\u05DD"
+  arabicText = "\u0633\u0644\u0627\u0645"
 
 suite "harfbuzzy raw bindings":
   test "value struct layouts match HarfBuzz headers":

@@ -16,6 +16,15 @@ jobs:
         with:
           nim-version: '2.2.10'
 
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            fonts-noto-core \
+            fonts-noto-extra
+
       - name: Cache Atlas deps
         uses: actions/cache@v4
         with:

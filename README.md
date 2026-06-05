@@ -92,9 +92,10 @@ nim test
 types own HarfBuzz handles with Nim destructors, so callers do not call
 `hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
 
-The raw modules include headers from `deps/harfbuzz/src` and dynamically load
-`libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On macOS they use
-Homebrew prefixes when available. Override library paths when needed:
+The raw modules include HarfBuzz headers from `deps/harfbuzz/src` when that
+checkout exists, otherwise they use `pkg-config --cflags harfbuzz`. They
+dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On macOS
+they use Homebrew prefixes when available. Override library paths when needed:
 
 ```sh
 nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
