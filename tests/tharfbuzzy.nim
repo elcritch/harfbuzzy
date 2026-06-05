@@ -255,7 +255,7 @@ suite "harfbuzzy wrapper":
       [typefaceFromFile(fixtureFont), typefaceFromFile(arabicFixtureFont)],
       fallback = chooseFallback,
     )
-    let paragraph = context.shapeParagraph("hello")
+    let paragraph = context.shapeParagraph(arabicText)
 
     check paragraph.logicalRuns.len == 1
     check paragraph.logicalRuns[0].typefaceIndex == 1
