@@ -900,7 +900,7 @@ proc initBlob*(data: string): Blob =
     else:
       data.cstring
   result.handle =
-    raw.hb_blob_create_or_fail(dataPtr, length, raw.HB_MEMORY_MODE_DUPLICATE, nil, nil)
+    raw.hb_blob_create(dataPtr, length, raw.HB_MEMORY_MODE_DUPLICATE, nil, nil)
   if result.handle == nil:
     raise newException(ValueError, "could not create HarfBuzz blob")
 
@@ -912,15 +912,15 @@ proc initBlob*(data: openArray[byte]): Blob =
     else:
       cast[cstring](unsafeAddr data[0])
   result.handle =
-    raw.hb_blob_create_or_fail(dataPtr, length, raw.HB_MEMORY_MODE_DUPLICATE, nil, nil)
+    raw.hb_blob_create(dataPtr, length, raw.HB_MEMORY_MODE_DUPLICATE, nil, nil)
   if result.handle == nil:
     raise newException(ValueError, "could not create HarfBuzz blob")
 
 proc blobFromFile*(path: string): Blob =
   if path.len == 0:
     raise newException(ValueError, "font path is empty")
-  result.handle = raw.hb_blob_create_from_file_or_fail(path.cstring)
-  if result.handle == nil:
+  result.handle = raw.hb_blob_create_from_file(path.cstring)
+  if result.handle == nil or raw.hb_blob_get_length(result.handle) == 0:
     raise newException(IOError, "could not read HarfBuzz blob from " & path)
 
 proc subBlob*(blob: Blob, offset, length: Natural): Blob =
@@ -956,18 +956,14 @@ proc faceCount*(blob: Blob): int =
 
 proc initFace*(blob: Blob, index: Natural = 0): Face =
   result.handle =
-    raw.hb_face_create_or_fail(blob.requireBlob, checkedCuint(index, "face index"))
+    raw.hb_face_create(blob.requireBlob, checkedCuint(index, "face index"))
   if result.handle == nil:
     raise newException(ValueError, "could not create HarfBuzz face")
 
 proc faceFromFile*(path: string, index: Natural = 0): Face =
   if path.len == 0:
     raise newException(ValueError, "font path is empty")
-  result.handle = raw.hb_face_create_from_file_or_fail(
-    path.cstring, checkedCuint(index, "face index")
-  )
-  if result.handle == nil:
-    raise newException(IOError, "could not read HarfBuzz face from " & path)
+  result = initFace(blobFromFile(path), index)
 
 proc referenceBlob*(face: Face): Blob =
   result.handle = raw.hb_face_reference_blob(face.requireFace)

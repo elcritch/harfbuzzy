@@ -1,6 +1,7 @@
 ## Minimal FriBidi bindings used by the paragraph shaping pipeline.
 
-import std/os
+when defined(macosx):
+  import std/os
 
 const fribidiDynlibOverride* {.strdefine: "harfbuzzyFribidiDynlib".} = ""
 
