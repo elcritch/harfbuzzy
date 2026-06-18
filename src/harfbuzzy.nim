@@ -205,6 +205,10 @@ type
     start*: uint32
     ending*: uint32
 
+  Variation* = object
+    tag*: Tag
+    value*: float32
+
   GlyphInfo* = object
     codepoint*: Codepoint
     cluster*: uint32
@@ -622,6 +626,9 @@ proc toFeature*(value: string): Feature =
   else:
     raise newException(ValueError, "invalid HarfBuzz feature: " & value)
 
+proc initVariation*(tag: Tag, value: float32): Variation =
+  Variation(tag: tag, value: value)
+
 proc initShapeOptions*(
     features: openArray[Feature] = [],
     shapers: openArray[string] = [],
@@ -886,6 +893,9 @@ proc toRaw(feature: Feature): raw.HbFeature =
     ending: cuint(feature.ending),
   )
 
+proc toRaw(variation: Variation): raw.HbVariation =
+  raw.HbVariation(tag: raw.HbTag(variation.tag), value: cfloat(variation.value))
+
 proc `$`*(feature: Feature): string =
   var rawFeature = feature.toRaw
   var buf: array[128, cchar]
@@ -1081,6 +1091,20 @@ proc ppem*(font: Font): Ppem =
   var x, y: cuint
   raw.hb_font_get_ppem(font.requireFont, addr x, addr y)
   Ppem(x: uint(x), y: uint(y))
+
+proc setVariations*(font: var Font, variations: openArray[Variation]) =
+  if variations.len == 0:
+    raw.hb_font_set_variations(font.requireFont, nil, 0)
+    return
+
+  var rawVariations = newSeq[raw.HbVariation](variations.len)
+  for i, variation in variations:
+    rawVariations[i] = variation.toRaw
+  raw.hb_font_set_variations(
+    font.requireFont,
+    addr rawVariations[0],
+    checkedCuint(rawVariations.len, "variation count"),
+  )
 
 proc horizontalExtents*(font: Font): FontExtents =
   var extents: raw.HbFontExtents

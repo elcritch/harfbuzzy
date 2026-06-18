@@ -494,6 +494,10 @@ proc hb_font_get_ppem*(
   font: HbFont, xPpem, yPpem: ptr cuint
 ) {.cdecl, importc: "hb_font_get_ppem", dynlib: hbLib.}
 
+proc hb_font_set_variations*(
+  font: HbFont, variations: ptr HbVariation, variationsLength: cuint
+) {.cdecl, importc: "hb_font_set_variations", dynlib: hbLib.}
+
 proc hb_font_get_h_extents*(
   font: HbFont, extents: ptr HbFontExtents
 ): HbBool {.cdecl, importc: "hb_font_get_h_extents", dynlib: hbLib.}
