@@ -346,6 +346,7 @@ const
   scriptInherited* = Script(raw.HB_SCRIPT_INHERITED)
   scriptUnknown* = Script(raw.HB_SCRIPT_UNKNOWN)
   scriptArabic* = Script(raw.HB_SCRIPT_ARABIC)
+  scriptDevanagari* = Script(raw.hbTag('D', 'e', 'v', 'a'))
   scriptHebrew* = Script(raw.hbTag('H', 'e', 'b', 'r'))
   scriptLatin* = Script(raw.HB_SCRIPT_LATIN)
   scriptInvalid* = Script(raw.HB_SCRIPT_INVALID)
@@ -753,16 +754,27 @@ func isArabicCodepoint(codepoint: Codepoint): bool =
 func isHebrewCodepoint(codepoint: Codepoint): bool =
   codepoint >= 0x0590'u32 and codepoint <= 0x05FF'u32
 
+func isDevanagariCodepoint(codepoint: Codepoint): bool =
+  (codepoint >= 0x0900'u32 and codepoint <= 0x097F'u32) or
+    (codepoint >= 0xA8E0'u32 and codepoint <= 0xA8FF'u32) or
+    (codepoint >= 0x11B00'u32 and codepoint <= 0x11B5F'u32)
+
 func isLatinCodepoint(codepoint: Codepoint): bool =
   (codepoint >= 0x0041'u32 and codepoint <= 0x005A'u32) or
     (codepoint >= 0x0061'u32 and codepoint <= 0x007A'u32) or
     (codepoint >= 0x00C0'u32 and codepoint <= 0x024F'u32)
+
+func shouldSetScript(script: Script): bool =
+  raw.HbScript(script) != raw.HB_SCRIPT_INVALID and
+    raw.HbScript(script) != raw.HB_SCRIPT_UNKNOWN
 
 func scriptFor*(codepoint: Codepoint): Script =
   if isArabicCodepoint(codepoint):
     scriptArabic
   elif isHebrewCodepoint(codepoint):
     scriptHebrew
+  elif isDevanagariCodepoint(codepoint):
+    scriptDevanagari
   elif isLatinCodepoint(codepoint):
     scriptLatin
   else:
@@ -778,6 +790,8 @@ func inferScript(text: openArray[Codepoint], first, last: int): Script =
 proc defaultLanguageForScript*(script: Script): Language =
   if raw.HbScript(script) == raw.HB_SCRIPT_ARABIC:
     toLanguage("ar")
+  elif raw.HbScript(script) == raw.HbScript(scriptDevanagari):
+    toLanguage("hi")
   elif raw.HbScript(script) == raw.HbScript(scriptHebrew):
     toLanguage("he")
   elif raw.HbScript(script) == raw.HB_SCRIPT_LATIN:
@@ -1365,7 +1379,7 @@ proc serializeGlyphs*(
 proc applyShapeOptions*(buffer: var Buffer, options: ShapeOptions) =
   if options.direction != Direction.invalid:
     buffer.setDirection(options.direction)
-  if raw.HbScript(options.script) != raw.HB_SCRIPT_INVALID:
+  if options.script.shouldSetScript:
     buffer.setScript(options.script)
   if raw.HbLanguage(options.language) != raw.HB_LANGUAGE_INVALID:
     buffer.setLanguage(options.language)
@@ -1590,7 +1604,7 @@ proc shapeRun*(
   var buffer = initBuffer()
   buffer.addUtf8(text[run.byteStart ..< run.byteEnd])
   buffer.setDirection(run.direction)
-  if raw.HbScript(run.script) != raw.HB_SCRIPT_INVALID:
+  if run.script.shouldSetScript:
     buffer.setScript(run.script)
   if raw.HbLanguage(run.language) != raw.HB_LANGUAGE_INVALID:
     buffer.setLanguage(run.language)

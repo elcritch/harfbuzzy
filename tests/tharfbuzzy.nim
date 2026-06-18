@@ -56,6 +56,7 @@ suite "harfbuzzy wrapper":
     let liga = toTag("liga")
     check $liga == "liga"
     check $scriptLatin == "Latn"
+    check $scriptDevanagari == "Deva"
     check horizontalDirection(scriptArabic) == Direction.rtl
     check $toLanguage("en") == "en"
     check toDirection("rtl") == Direction.rtl
@@ -196,8 +197,22 @@ suite "harfbuzzy wrapper":
     check rtlRuns[0].byteStart == 0
     check rtlRuns[0].byteEnd == hebrewText.len
 
+    let devanagariRuns = bidiRuns("क्ष")
+    check devanagariRuns.len == 1
+    check devanagariRuns[0].direction == Direction.ltr
+    check $devanagariRuns[0].script == "Deva"
+
     expect ValueError:
       discard bidiRuns("\xFF")
+
+  test "unknown script option lets HarfBuzz infer complex script properties":
+    var buffer = initBuffer()
+    buffer.addUtf8("क्ष")
+    buffer.applyShapeOptions(
+      initShapeOptions(direction = Direction.ltr, script = scriptUnknown)
+    )
+
+    check $buffer.script == "Deva"
 
   test "paragraph shaping returns logical and visual runs":
     check fileExists(arabicFixtureFont)
