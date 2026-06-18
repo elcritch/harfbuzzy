@@ -1,5 +1,5 @@
-version       = "0.1.0"
-author        = "Elcritch"
+version       = "0.2.0"
+author        = "elcritch"
 description   = "Nim bindings and wrappers for HarfBuzz."
 license       = "MIT"
 srcDir        = "src"
