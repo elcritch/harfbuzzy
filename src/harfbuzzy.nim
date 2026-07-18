@@ -347,6 +347,7 @@ const
   scriptUnknown* = Script(raw.HB_SCRIPT_UNKNOWN)
   scriptArabic* = Script(raw.HB_SCRIPT_ARABIC)
   scriptDevanagari* = Script(raw.hbTag('D', 'e', 'v', 'a'))
+  scriptEmoji* = Script(raw.hbTag('Z', 's', 'y', 'e'))
   scriptHebrew* = Script(raw.hbTag('H', 'e', 'b', 'r'))
   scriptLatin* = Script(raw.HB_SCRIPT_LATIN)
   scriptInvalid* = Script(raw.HB_SCRIPT_INVALID)
@@ -744,41 +745,29 @@ func levelValue*(level: BidiLevel): int =
 func direction*(level: BidiLevel): Direction =
   if (level.levelValue and 1) == 0: Direction.ltr else: Direction.rtl
 
-func isArabicCodepoint(codepoint: Codepoint): bool =
-  (codepoint >= 0x0600'u32 and codepoint <= 0x06FF'u32) or
-    (codepoint >= 0x0750'u32 and codepoint <= 0x077F'u32) or
-    (codepoint >= 0x08A0'u32 and codepoint <= 0x08FF'u32) or
-    (codepoint >= 0xFB50'u32 and codepoint <= 0xFDFF'u32) or
-    (codepoint >= 0xFE70'u32 and codepoint <= 0xFEFF'u32)
-
-func isHebrewCodepoint(codepoint: Codepoint): bool =
-  codepoint >= 0x0590'u32 and codepoint <= 0x05FF'u32
-
-func isDevanagariCodepoint(codepoint: Codepoint): bool =
-  (codepoint >= 0x0900'u32 and codepoint <= 0x097F'u32) or
-    (codepoint >= 0xA8E0'u32 and codepoint <= 0xA8FF'u32) or
-    (codepoint >= 0x11B00'u32 and codepoint <= 0x11B5F'u32)
-
-func isLatinCodepoint(codepoint: Codepoint): bool =
-  (codepoint >= 0x0041'u32 and codepoint <= 0x005A'u32) or
-    (codepoint >= 0x0061'u32 and codepoint <= 0x007A'u32) or
-    (codepoint >= 0x00C0'u32 and codepoint <= 0x024F'u32)
+func isEmojiCodepoint(codepoint: Codepoint): bool =
+  codepoint in 0x1F000'u32 .. 0x1FAFF'u32 or codepoint in 0x1FC00'u32 .. 0x1FFFF'u32 or
+    codepoint in 0x2600'u32 .. 0x27BF'u32
 
 func shouldSetScript(script: Script): bool =
   raw.HbScript(script) != raw.HB_SCRIPT_INVALID and
     raw.HbScript(script) != raw.HB_SCRIPT_UNKNOWN
 
 func scriptFor*(codepoint: Codepoint): Script =
-  if isArabicCodepoint(codepoint):
-    scriptArabic
-  elif isHebrewCodepoint(codepoint):
-    scriptHebrew
-  elif isDevanagariCodepoint(codepoint):
-    scriptDevanagari
-  elif isLatinCodepoint(codepoint):
-    scriptLatin
-  else:
-    scriptUnknown
+  if codepoint.isEmojiCodepoint:
+    return scriptEmoji
+  Script(
+    raw.hb_unicode_script(
+      raw.hb_unicode_funcs_get_default(), raw.HbCodepoint(codepoint)
+    )
+  )
+
+func scriptIsNeutral(script: Script): bool =
+  let value = raw.HbScript(script)
+  value in [
+    raw.HB_SCRIPT_INVALID, raw.HB_SCRIPT_UNKNOWN, raw.HB_SCRIPT_COMMON,
+    raw.HB_SCRIPT_INHERITED,
+  ]
 
 func inferScript(text: openArray[Codepoint], first, last: int): Script =
   for index in first ..< last:
@@ -834,9 +823,9 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
     var last = first + 1
     while last < levels.len and levels[last] == levels[first]:
       let nextScript = scriptFor(decoded.codepoints[last])
-      if raw.HbScript(runScript) == raw.HB_SCRIPT_UNKNOWN:
+      if runScript.scriptIsNeutral:
         runScript = nextScript
-      elif raw.HbScript(nextScript) != raw.HB_SCRIPT_UNKNOWN and
+      elif not nextScript.scriptIsNeutral and
           raw.HbScript(nextScript) != raw.HbScript(runScript):
         break
       inc last
@@ -1657,7 +1646,8 @@ proc hasMissingGlyphs*(run: ShapedRun): bool =
 func codepointNeedsGlyph(codepoint: Codepoint): bool =
   not (
     codepoint == 0x0009'u32 or codepoint == 0x000A'u32 or codepoint == 0x000D'u32 or
-    codepoint == 0x0020'u32
+    codepoint == 0x0020'u32 or codepoint == 0x200C'u32 or codepoint == 0x200D'u32 or
+    codepoint in 0xFE00'u32 .. 0xFE0F'u32 or codepoint in 0xE0100'u32 .. 0xE01EF'u32
   )
 
 proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =

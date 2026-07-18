@@ -364,6 +364,14 @@ proc hb_script_get_horizontal_direction*(
   script: HbScript
 ): HbDirection {.cdecl, importc: "hb_script_get_horizontal_direction", dynlib: hbLib.}
 
+proc hb_unicode_funcs_get_default*(): HbUnicodeFuncs {.
+  cdecl, importc: "hb_unicode_funcs_get_default", dynlib: hbLib
+.}
+
+proc hb_unicode_script*(
+  ufuncs: HbUnicodeFuncs, unicode: HbCodepoint
+): HbScript {.cdecl, importc: "hb_unicode_script", dynlib: hbLib.}
+
 proc hb_feature_from_string*(
   str: cstring, len: cint, feature: ptr HbFeature
 ): HbBool {.cdecl, importc: "hb_feature_from_string", dynlib: hbLib.}

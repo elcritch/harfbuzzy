@@ -1,4 +1,4 @@
-import std/[os, strutils, unittest]
+import std/[os, sequtils, strutils, unittest]
 
 import harfbuzzy
 import harfbuzzy/fribidi_raw
@@ -202,6 +202,12 @@ suite "harfbuzzy wrapper":
     check devanagariRuns[0].direction == Direction.ltr
     check $devanagariRuns[0].script == "Deva"
 
+    let mixedRuns = bidiRuns("hello 世界 👋")
+    check mixedRuns.len >= 3
+    check mixedRuns.anyIt($it.script == "Latn")
+    check mixedRuns.anyIt($it.script == "Hani")
+    check mixedRuns.anyIt($it.script == "Zsye")
+
     expect ValueError:
       discard bidiRuns("\xFF")
 
@@ -245,6 +251,7 @@ suite "harfbuzzy wrapper":
     let context = initShapeContext(latinTypeface, [arabicTypeface])
     let text = "abc " & arabicText
     let paragraph = context.shapeParagraph(text)
+    let primaryCoversArabic = not latinTypeface.shape(arabicText).hasMissingGlyphs
 
     check paragraph.logicalRuns.len >= 2
     var sawPrimary = false
@@ -256,7 +263,7 @@ suite "harfbuzzy wrapper":
         sawFallback = sawFallback or run.typefaceIndex == 1
       check not run.hasMissingGlyphs
     check sawPrimary
-    check sawFallback
+    check sawFallback == not primaryCoversArabic
 
   test "font fallback callback can override selection":
     proc chooseFallback(text: string, run: TextRun, typefaces: seq[Typeface]): int =

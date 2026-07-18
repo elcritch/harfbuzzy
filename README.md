@@ -35,7 +35,11 @@ for run in paragraph.visualRuns:
 
 Clusters are byte offsets into the original UTF-8 input string. HarfBuzz itself
 does not implement the Unicode Bidirectional Algorithm; the paragraph API runs
-that step before shaping.
+that step before shaping. Script segmentation uses HarfBuzz's Unicode data for
+the full script set, keeps common and inherited characters with adjacent runs,
+and separates emoji sequences so a `ShapeContext` can choose an emoji-capable
+fallback. `ParagraphOptions.language` supplies the BCP 47 language used for
+each detected run.
 
 More shaping controls are available when needed:
 
