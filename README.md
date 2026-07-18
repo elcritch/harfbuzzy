@@ -100,10 +100,11 @@ nim test
 types own HarfBuzz handles with Nim destructors, so callers do not call
 `hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
 
-The raw modules include HarfBuzz headers from `deps/harfbuzz/src` when that
-checkout exists, otherwise they use `pkg-config --cflags harfbuzz`. They
-dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On macOS
-they use Homebrew prefixes when available. Override library paths when needed:
+By default, the raw modules include HarfBuzz headers from `deps/harfbuzz/src`
+when that checkout exists, otherwise they use `pkg-config --cflags harfbuzz`.
+They dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On
+macOS they use Homebrew prefixes when available. Override library paths when
+needed:
 
 ```sh
 nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
@@ -111,6 +112,29 @@ nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
   -d:harfbuzzyFribidiDynlib=/path/to/libfribidi.dylib \
   tests/tharfbuzzy.nim
 ```
+
+To download HarfBuzz 14.2.0, build it, and statically link the HarfBuzz and
+HarfBuzz subset libraries, compile with `-d:harfbuzzyStatic`:
+
+```sh
+nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
+```
+
+This opt-in build requires CMake and a native C/C++ toolchain. The release
+archive is pinned by version and SHA-256 hash. Build files are cached under the
+platform cache directory (for example, `~/.cache/harfbuzzy` on Linux), so later
+compiles reuse the same build. Override that location when needed:
+
+```sh
+nim c -d:harfbuzzyStatic \
+  -d:harfbuzzyStaticCache=/path/to/cache \
+  your_program.nim
+```
+
+Pass additional CMake configuration arguments with
+`-d:harfbuzzyStaticCmakeArgs="..."`, or select a CMake executable with
+`-d:harfbuzzyStaticCmake=/path/to/cmake`. On Windows, the static build requires
+MSVC and `--cc:vcc`. FriBidi remains dynamically loaded in this mode.
 
 ## Regenerating Raw Seeds
 
