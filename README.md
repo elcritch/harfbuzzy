@@ -75,6 +75,10 @@ for run in paragraph.visualRuns:
   echo run.typefaceIndex, " ", run.textRun.byteStart, "..", run.textRun.byteEnd
 ```
 
+The primary typeface remains selected wherever it has glyph coverage. Within a
+single bidirectional/script run, shaping splits at unsupported codepoints and
+uses ordered fallback typefaces for maximal covered segments.
+
 `ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
 to glyph-range helpers for editor and layout integrations.
 
