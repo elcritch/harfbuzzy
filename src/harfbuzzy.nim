@@ -1647,7 +1647,8 @@ func codepointNeedsGlyph(codepoint: Codepoint): bool =
   not (
     codepoint == 0x0009'u32 or codepoint == 0x000A'u32 or codepoint == 0x000D'u32 or
     codepoint == 0x0020'u32 or codepoint == 0x200C'u32 or codepoint == 0x200D'u32 or
-    codepoint in 0xFE00'u32 .. 0xFE0F'u32 or codepoint in 0xE0100'u32 .. 0xE01EF'u32
+    codepoint in 0xFE00'u32 .. 0xFE0F'u32 or codepoint in 0xE0100'u32 .. 0xE01EF'u32 or
+    raw.HbScript(codepoint.scriptFor) == raw.HB_SCRIPT_INHERITED
   )
 
 proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =
@@ -1657,20 +1658,49 @@ proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =
       return false
   true
 
-proc selectTypefaceIndex(
-    context: ShapeContext, text: string, decoded: DecodedText, run: TextRun
+proc supportedPrefixEnd(
+    typeface: Typeface, decoded: DecodedText, first, ending: int
 ): int =
+  result = first
+  while result < ending:
+    let codepoint = decoded.codepoints[result]
+    if codepointNeedsGlyph(codepoint) and not typeface.font.hasGlyph(codepoint):
+      return
+    inc result
+
+proc sliceTextRun(run: TextRun, decoded: DecodedText, first, ending: int): TextRun =
+  result = run
+  result.byteStart = decoded.byteStarts[first]
+  result.byteEnd = decoded.byteEnds[ending - 1]
+  result.codepointStart = first
+  result.codepointEnd = ending
+
+proc selectTypefaceSegment(
+    context: ShapeContext, text: string, decoded: DecodedText, run: TextRun, first: int
+): tuple[typefaceIndex, ending: int] =
   if context.typefaces.len == 0:
     raise newException(ValueError, "shape context requires at least one typeface")
   if context.fallback != nil:
-    result = context.fallback(text, run, context.typefaces)
-    if result < 0 or result >= context.typefaces.len:
+    result.typefaceIndex = context.fallback(text, run, context.typefaces)
+    if result.typefaceIndex < 0 or result.typefaceIndex >= context.typefaces.len:
       raise newException(ValueError, "font fallback callback returned an invalid index")
+    result.ending = run.codepointEnd
     return
+
+  var required = first
+  while required < run.codepointEnd and
+      not codepointNeedsGlyph(decoded.codepoints[required]):
+    inc required
+  if required == run.codepointEnd:
+    return (0, run.codepointEnd)
+
+  result.typefaceIndex = 0
   for index, typeface in context.typefaces:
-    if typeface.supportsRun(decoded, run):
-      return index
-  0
+    if typeface.font.hasGlyph(decoded.codepoints[required]):
+      result.typefaceIndex = index
+      result.ending = typeface.supportedPrefixEnd(decoded, first, run.codepointEnd)
+      return
+  result.ending = required + 1
 
 proc shapeParagraph*(
     font: Font, text: string, options = ParagraphOptions()
@@ -1704,28 +1734,34 @@ proc shapeParagraph*(context: ShapeContext, text: string): ShapedParagraph =
   let analysis = analyzeBidi(text, context.options)
   let decoded = decodeUtf8(text)
   result.baseDirection = analysis.baseDirection
-  result.logicalRuns = newSeq[ShapedRun](analysis.runs.len)
-  for index, run in analysis.runs:
-    let typefaceIndex = context.selectTypefaceIndex(text, decoded, run)
-    let shapeOptions = initShapeOptions(
-      features = run.features,
-      direction = run.direction,
-      script = run.script,
-      language = run.language,
-      flags = context.options.flags,
-      shapers = context.options.shapers,
-      clusterLevel = context.options.clusterLevel,
-    )
-    result.logicalRuns[index] =
-      shapeRun(context, text, run, typefaceIndex, shapeOptions)
-    if result.logicalRuns[index].hasMissingGlyphs:
-      for fallbackIndex, typeface in context.typefaces:
-        if fallbackIndex != typefaceIndex and typeface.supportsRun(decoded, run):
-          result.logicalRuns[index] =
-            shapeRun(context, text, run, fallbackIndex, shapeOptions)
-          break
+  var logicalTextRuns: seq[TextRun]
+  for run in analysis.runs:
+    var first = run.codepointStart
+    while first < run.codepointEnd:
+      let selection = context.selectTypefaceSegment(text, decoded, run, first)
+      let segment = run.sliceTextRun(decoded, first, selection.ending)
+      let shapeOptions = initShapeOptions(
+        features = segment.features,
+        direction = segment.direction,
+        script = segment.script,
+        language = segment.language,
+        flags = context.options.flags,
+        shapers = context.options.shapers,
+        clusterLevel = context.options.clusterLevel,
+      )
+      var shaped =
+        shapeRun(context, text, segment, selection.typefaceIndex, shapeOptions)
+      if shaped.hasMissingGlyphs:
+        for fallbackIndex, typeface in context.typefaces:
+          if fallbackIndex != selection.typefaceIndex and
+              typeface.supportsRun(decoded, segment):
+            shaped = shapeRun(context, text, segment, fallbackIndex, shapeOptions)
+            break
+      logicalTextRuns.add segment
+      result.logicalRuns.add shaped
+      first = selection.ending
 
-  let visualIndices = visualOrderIndices(analysis.runs)
+  let visualIndices = visualOrderIndices(logicalTextRuns)
   result.visualRuns = newSeq[ShapedRun](visualIndices.len)
   for outputIndex, runIndex in visualIndices:
     result.visualRuns[outputIndex] = result.logicalRuns[runIndex]

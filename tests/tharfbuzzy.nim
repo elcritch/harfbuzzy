@@ -26,6 +26,18 @@ let arabicFixtureFont = findFixtureFont(
     "/System/Library/Fonts/Supplemental/Arial.ttf",
   ]
 )
+let emojiFixtureFont = findFixtureFont(
+  [
+    "../pixie/tests/fonts/NotoEmoji.otf", "deps/pixie/tests/fonts/NotoEmoji.otf",
+    "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+  ]
+)
+let symbolFixtureFont = findFixtureFont(
+  [
+    "/System/Library/Fonts/Apple Symbols.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+  ]
+)
 
 const
   hebrewText = "\u05E9\u05DC\u05D5\u05DD"
@@ -264,6 +276,42 @@ suite "harfbuzzy wrapper":
       check not run.hasMissingGlyphs
     check sawPrimary
     check sawFallback == not primaryCoversArabic
+
+  test "shape context splits one script run across fallback fonts":
+    if fileExists(fixtureFont) and fileExists(emojiFixtureFont):
+      let
+        primary = typefaceFromFile(fixtureFont)
+        emoji = typefaceFromFile(emojiFixtureFont)
+        music = 0x266B'u32
+        coffee = 0x2615'u32
+      if primary.font.hasGlyph(music) and not primary.font.hasGlyph(coffee) and
+          emoji.font.hasGlyph(coffee) and not emoji.font.hasGlyph(music):
+        let paragraph = initShapeContext(primary, [emoji]).shapeParagraph("♫☕")
+
+        require paragraph.logicalRuns.len == 2
+        check paragraph.logicalRuns[0].typefaceIndex == 0
+        check paragraph.logicalRuns[1].typefaceIndex == 1
+        check paragraph.logicalRuns[0].textRun.codepointStart == 0
+        check paragraph.logicalRuns[0].textRun.codepointEnd == 1
+        check paragraph.logicalRuns[1].textRun.codepointStart == 1
+        check paragraph.logicalRuns[1].textRun.codepointEnd == 2
+        check not paragraph.logicalRuns[0].hasMissingGlyphs
+        check not paragraph.logicalRuns[1].hasMissingGlyphs
+
+  test "shape context preserves the primary face before fallback":
+    if fileExists(fixtureFont) and fileExists(symbolFixtureFont):
+      let
+        primary = typefaceFromFile(fixtureFont)
+        symbols = typefaceFromFile(symbolFixtureFont)
+        music = 0x266B'u32
+        coffee = 0x2615'u32
+      if primary.font.hasGlyph(music) and not primary.font.hasGlyph(coffee) and
+          symbols.font.hasGlyph(music) and symbols.font.hasGlyph(coffee):
+        let paragraph = initShapeContext(primary, [symbols]).shapeParagraph("♫☕")
+
+        require paragraph.logicalRuns.len == 2
+        check paragraph.logicalRuns[0].typefaceIndex == 0
+        check paragraph.logicalRuns[1].typefaceIndex == 1
 
   test "font fallback callback can override selection":
     proc chooseFallback(text: string, run: TextRun, typefaces: seq[Typeface]): int =
