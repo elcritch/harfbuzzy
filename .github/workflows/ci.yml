@@ -48,3 +48,14 @@ jobs:
 
       - name: Run tests
         run: nim test
+
+      - name: Test bundled static HarfBuzz
+        run: nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
+
+      - name: Verify HarfBuzz is statically linked
+        shell: bash
+        run: |
+          if ldd tests/tharfbuzzy | grep -q harfbuzz; then
+            echo "The static test executable still depends on a shared HarfBuzz library."
+            exit 1
+          fi
