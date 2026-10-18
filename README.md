@@ -125,6 +125,7 @@ archive is pinned by version and SHA-256 hash. Build files are cached under the
 platform cache directory (for example, `~/.cache/harfbuzzy` on Linux), so later
 compiles reuse the same build without downloading the source again. Separate
 checkouts, compiler settings, and CMake arguments use separate build directories.
+Concurrent builds sharing a directory wait for its native build lock.
 The native build uses two jobs by default; set `CMAKE_BUILD_PARALLEL_LEVEL` to
 choose another limit.
 Override the cache location when needed:

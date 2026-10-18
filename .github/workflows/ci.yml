@@ -61,7 +61,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: deps/harfbuzz-static
-          key: ${{ runner.os }}-${{ runner.arch }}-harfbuzz-${{ hashFiles('src/harfbuzzy/private/staticHarfbuzz.nim', 'src/harfbuzzy/private/harfbuzz-static/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-harfbuzz-${{ hashFiles('src/harfbuzzy/private/staticHarfbuzz.nim', 'src/harfbuzzy/private/harfbuzz-static/*.cmake', 'src/harfbuzzy/private/harfbuzz-static/CMakeLists.txt') }}
 
       - name: Install Atlas
         shell: bash

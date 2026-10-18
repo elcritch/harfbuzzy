@@ -13,13 +13,18 @@ const
   defaultCacheDir = getCacheDir() / "harfbuzzy"
   cacheDir = if harfbuzzyStaticCache.len > 0: harfbuzzyStaticCache else: defaultCacheDir
   harfbuzzCmakeDir = currentSourcePath().parentDir() / "harfbuzz-static"
+  harfbuzzBuildScript = harfbuzzCmakeDir / "build.cmake"
   # CMake caches absolute source paths and compiler choices. Keep independent
   # checkouts and configurations from reusing incompatible build directories.
   buildKey =
     $hash(
       harfbuzzCmakeDir & "\n" & readFile(harfbuzzCmakeDir / "CMakeLists.txt") & "\n" &
-        harfbuzzyStaticCmake & "\n" & harfbuzzyStaticCmakeArgs & "\n" & getEnv("CC") &
-        "\n" & getEnv("CXX") & "\n" & getEnv("CMAKE_GENERATOR")
+        readFile(harfbuzzBuildScript) & "\n" & harfbuzzyStaticCmake & "\n" &
+        harfbuzzyStaticCmakeArgs & "\n" & getEnv("CC") & "\n" & getEnv("CXX") & "\n" &
+        getEnv("CFLAGS") & "\n" & getEnv("CXXFLAGS") & "\n" & getEnv("LDFLAGS") & "\n" &
+        getEnv("CMAKE_GENERATOR") & "\n" & getEnv("CMAKE_GENERATOR_PLATFORM") & "\n" &
+        getEnv("CMAKE_GENERATOR_TOOLSET") & "\n" & getEnv("SDKROOT") & "\n" &
+        getEnv("MACOSX_DEPLOYMENT_TARGET")
     )
   harfbuzzBuildDir* = cacheDir / ("harfbuzz-" & harfbuzzVersion) / targetName / buildKey
   harfbuzzSourceDir* = harfbuzzBuildDir / "_deps" / "harfbuzz-src" / "src"
@@ -37,16 +42,14 @@ const
     else:
       harfbuzzLibDir / "libharfbuzz-subset.a"
 
-  configureCommand =
-    quoteShell(harfbuzzyStaticCmake) & " -S " & quoteShell(harfbuzzCmakeDir) & " -B " &
-    quoteShell(harfbuzzBuildDir) & " -DCMAKE_BUILD_TYPE=Release" &
-    (when defined(vcc): " -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded" else: "") &
-    (if harfbuzzyStaticCmakeArgs.len > 0: " " & harfbuzzyStaticCmakeArgs
-    else: "")
   buildCommand =
-    quoteShell(harfbuzzyStaticCmake) & " --build " & quoteShell(harfbuzzBuildDir) &
-    " --config Release --target harfbuzz harfbuzz-subset --parallel " &
-    quoteShell(buildJobs)
+    quoteShell(harfbuzzyStaticCmake) & " " &
+    quoteShell("-DHARFBUZZY_SOURCE_DIR=" & harfbuzzCmakeDir) & " " &
+    quoteShell("-DHARFBUZZY_BUILD_DIR=" & harfbuzzBuildDir) & " " &
+    quoteShell("-DHARFBUZZY_EXTRA_ARGS=" & harfbuzzyStaticCmakeArgs) & " " &
+    quoteShell("-DHARFBUZZY_BUILD_JOBS=" & buildJobs) & " " &
+    (when defined(vcc): "-DHARFBUZZY_MSVC_RUNTIME=MultiThreaded " else: "") & "-P " &
+    quoteShell(harfbuzzBuildScript)
 
 when defined(windows) and not defined(vcc):
   {.error: "harfbuzzy's static HarfBuzz build requires --cc:vcc on Windows".}
@@ -63,7 +66,6 @@ static:
       IOError, "harfbuzzy static build support is missing its CMakeLists.txt"
     )
 
-  runBuildCommand(configureCommand)
   runBuildCommand(buildCommand)
 
   if not fileExists(harfbuzzStaticLib) or not fileExists(harfbuzzSubsetStaticLib):
