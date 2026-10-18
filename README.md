@@ -120,10 +120,14 @@ HarfBuzz subset libraries, compile with `-d:harfbuzzyStatic`:
 nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
 ```
 
-This opt-in build requires CMake and a native C/C++ toolchain. The release
+This opt-in build requires CMake 3.24 or newer and a native C/C++ toolchain. The release
 archive is pinned by version and SHA-256 hash. Build files are cached under the
 platform cache directory (for example, `~/.cache/harfbuzzy` on Linux), so later
-compiles reuse the same build. Override that location when needed:
+compiles reuse the same build without downloading the source again. Separate
+checkouts, compiler settings, and CMake arguments use separate build directories.
+The native build uses two jobs by default; set `CMAKE_BUILD_PARALLEL_LEVEL` to
+choose another limit.
+Override the cache location when needed:
 
 ```sh
 nim c -d:harfbuzzyStatic \
@@ -135,6 +139,10 @@ Pass additional CMake configuration arguments with
 `-d:harfbuzzyStaticCmakeArgs="..."`, or select a CMake executable with
 `-d:harfbuzzyStaticCmake=/path/to/cmake`. On Windows, the static build requires
 MSVC and `--cc:vcc`. FriBidi remains dynamically loaded in this mode.
+Run Windows builds from a Visual Studio Developer shell. The native archives
+use the static MSVC runtime (`/MT`) by default; if your Nim build uses `/MD`,
+pass `-d:harfbuzzyStaticCmakeArgs="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"`.
+The static archives can also be linked into a shared library on Unix.
 
 ## Regenerating Raw Seeds
 

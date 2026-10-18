@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.24)
 
 project(harfbuzzy_harfbuzz LANGUAGES C CXX)
 
@@ -6,6 +6,7 @@ include(FetchContent)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_FRAMEWORK OFF CACHE BOOL "" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)
 set(HB_BUILD_SUBSET ON CACHE BOOL "" FORCE)
 set(HB_BUILD_RASTER OFF CACHE BOOL "" FORCE)
@@ -37,3 +38,14 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(harfbuzz)
+
+# The core amalgamation already defines these helpers. Resolve the subset's
+# references through its core dependency rather than defining them twice.
+get_target_property(subset_sources harfbuzz-subset SOURCES)
+list(REMOVE_ITEM subset_sources
+  "${harfbuzz_SOURCE_DIR}/src/hb-number.cc"
+  "${harfbuzz_SOURCE_DIR}/src/hb-ot-cff1-table.cc"
+  "${harfbuzz_SOURCE_DIR}/src/hb-ot-cff2-table.cc"
+  "${harfbuzz_SOURCE_DIR}/src/hb-static.cc"
+)
+set_property(TARGET harfbuzz-subset PROPERTY SOURCES ${subset_sources})

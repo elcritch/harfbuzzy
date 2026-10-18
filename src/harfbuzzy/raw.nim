@@ -33,7 +33,8 @@ when defined(harfbuzzyStatic):
   {.passL: quoteShell(staticHarfbuzz.harfbuzzSubsetStaticLib).}
   {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
   when defined(posix):
-    {.passL: "-pthread".}
+    # Static archive dependencies must follow the archives on ELF linkers.
+    {.passL: "-pthread -lm".}
 
 const
   hbHeader = "hb.h"
@@ -81,10 +82,15 @@ when defined(harfbuzzyStatic):
   {.pragma: hbDynlib, header: hbHeader.}
   {.pragma: hbAatDynlib, header: hbAatHeader.}
   {.pragma: hbSubsetDynlib, header: hbSubsetHeader.}
+  const hbArrayPrefix = "harfbuzzy_"
+  const hbArrayHeader = currentSourcePath().parentDir() / "private" / "staticArrays.h"
+  {.pragma: hbArrayDynlib, header: hbArrayHeader.}
 else:
   {.pragma: hbDynlib, dynlib: hbLib.}
   {.pragma: hbAatDynlib, dynlib: hbLib.}
   {.pragma: hbSubsetDynlib, dynlib: hbSubsetLib.}
+  const hbArrayPrefix = ""
+  {.pragma: hbArrayDynlib, dynlib: hbLib.}
 
 type
   HbBool* = cint
@@ -107,7 +113,7 @@ type
   HbSubsetSets* = distinct cuint
   HbSubsetFlags* = distinct cuint
 
-  HbVarInt* {.bycopy, union.} = object
+  HbVarInt* {.importc: "hb_var_int_t", header: hbHeader, bycopy, union.} = object
     u32*: uint32
     i32*: int32
     u16*: array[2, uint16]
@@ -115,7 +121,7 @@ type
     u8*: array[4, uint8]
     i8*: array[4, int8]
 
-  HbVarNum* {.bycopy, union.} = object
+  HbVarNum* {.importc: "hb_var_num_t", header: hbHeader, bycopy, union.} = object
     f*: cfloat
     u32*: uint32
     i32*: int32
@@ -124,23 +130,23 @@ type
     u8*: array[4, uint8]
     i8*: array[4, int8]
 
-  HbFeature* {.bycopy.} = object
+  HbFeature* {.importc: "hb_feature_t", header: hbHeader, bycopy.} = object
     tag*: HbTag
     value*: uint32
     start*: cuint
     ending* {.importc: "end".}: cuint
 
-  HbVariation* {.bycopy.} = object
+  HbVariation* {.importc: "hb_variation_t", header: hbHeader, bycopy.} = object
     tag*: HbTag
     value*: cfloat
 
-  HbGlyphExtents* {.bycopy.} = object
+  HbGlyphExtents* {.importc: "hb_glyph_extents_t", header: hbHeader, bycopy.} = object
     xBearing* {.importc: "x_bearing".}: HbPosition
     yBearing* {.importc: "y_bearing".}: HbPosition
     width*: HbPosition
     height*: HbPosition
 
-  HbFontExtents* {.bycopy.} = object
+  HbFontExtents* {.importc: "hb_font_extents_t", header: hbHeader, bycopy.} = object
     ascender*: HbPosition
     descender*: HbPosition
     lineGap* {.importc: "line_gap".}: HbPosition
@@ -154,28 +160,28 @@ type
     reserved2*: HbPosition
     reserved1*: HbPosition
 
-  HbGlyphInfo* {.bycopy.} = object
+  HbGlyphInfo* {.importc: "hb_glyph_info_t", header: hbHeader, bycopy.} = object
     codepoint*: HbCodepoint
     mask*: HbMask
     cluster*: uint32
     var1*: HbVarInt
     var2*: HbVarInt
 
-  HbGlyphPosition* {.bycopy.} = object
+  HbGlyphPosition* {.importc: "hb_glyph_position_t", header: hbHeader, bycopy.} = object
     xAdvance* {.importc: "x_advance".}: HbPosition
     yAdvance* {.importc: "y_advance".}: HbPosition
     xOffset* {.importc: "x_offset".}: HbPosition
     yOffset* {.importc: "y_offset".}: HbPosition
     var1* {.importc: "var".}: HbVarInt
 
-  HbSegmentProperties* {.bycopy.} = object
+  HbSegmentProperties* {.importc: "hb_segment_properties_t", header: hbHeader, bycopy.} = object
     direction*: HbDirection
     script*: HbScript
     language*: HbLanguage
     reserved1*: pointer
     reserved2*: pointer
 
-  HbUserDataKey* {.bycopy.} = object
+  HbUserDataKey* {.importc: "hb_user_data_key_t", header: hbHeader, bycopy.} = object
     unused*: cchar
 
   HbDestroyFunc* = proc(userData: pointer) {.cdecl.}
@@ -765,7 +771,7 @@ proc hb_buffer_serialize_format_to_string*(
 ): cstring {.cdecl, importc: "hb_buffer_serialize_format_to_string", hbDynlib.}
 
 proc hb_buffer_serialize_list_formats*(): cstringArray {.
-  cdecl, importc: "hb_buffer_serialize_list_formats", hbDynlib
+  cdecl, importc: (hbArrayPrefix & "hb_buffer_serialize_list_formats"), hbArrayDynlib
 .}
 
 proc hb_buffer_serialize_glyphs*(
@@ -789,10 +795,10 @@ proc hb_shape_full*(
   features: ptr HbFeature,
   numFeatures: cuint,
   shaperList: cstringArray,
-): HbBool {.cdecl, importc: "hb_shape_full", hbDynlib.}
+): HbBool {.cdecl, importc: (hbArrayPrefix & "hb_shape_full"), hbArrayDynlib.}
 
 proc hb_shape_list_shapers*(): cstringArray {.
-  cdecl, importc: "hb_shape_list_shapers", hbDynlib
+  cdecl, importc: (hbArrayPrefix & "hb_shape_list_shapers"), hbArrayDynlib
 .}
 
 proc hb_shape_plan_create*(
@@ -801,7 +807,9 @@ proc hb_shape_plan_create*(
   userFeatures: ptr HbFeature,
   numUserFeatures: cuint,
   shaperList: cstringArray,
-): HbShapePlan {.cdecl, importc: "hb_shape_plan_create", hbDynlib.}
+): HbShapePlan {.
+  cdecl, importc: (hbArrayPrefix & "hb_shape_plan_create"), hbArrayDynlib
+.}
 
 proc hb_shape_plan_create_cached*(
   face: HbFace,
@@ -809,7 +817,9 @@ proc hb_shape_plan_create_cached*(
   userFeatures: ptr HbFeature,
   numUserFeatures: cuint,
   shaperList: cstringArray,
-): HbShapePlan {.cdecl, importc: "hb_shape_plan_create_cached", hbDynlib.}
+): HbShapePlan {.
+  cdecl, importc: (hbArrayPrefix & "hb_shape_plan_create_cached"), hbArrayDynlib
+.}
 
 proc hb_shape_plan_reference*(
   shapePlan: HbShapePlan

@@ -14,7 +14,9 @@ let fixtureFont = findFixtureFont(
     "deps/luaharfbuzz/fonts/Rajdhani-Regular.ttf",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/Library/Fonts/Arial Unicode.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    getEnv("WINDIR", "C:/Windows") / "Fonts" / "consola.ttf",
   ]
 )
 let arabicFixtureFont = findFixtureFont(
@@ -24,6 +26,7 @@ let arabicFixtureFont = findFixtureFont(
     "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
     "/System/Library/Fonts/Supplemental/AlBayan.ttc",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
+    getEnv("WINDIR", "C:/Windows") / "Fonts" / "arial.ttf",
   ]
 )
 let emojiFixtureFont = findFixtureFont(
@@ -36,6 +39,7 @@ let symbolFixtureFont = findFixtureFont(
   [
     "/System/Library/Fonts/Apple Symbols.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+    getEnv("WINDIR", "C:/Windows") / "Fonts" / "seguisym.ttf",
   ]
 )
 
@@ -53,6 +57,11 @@ suite "harfbuzzy raw bindings":
     check sizeof(raw.HbGlyphInfo) == 20
     check sizeof(raw.HbGlyphPosition) == 20
     check sizeof(raw.HbFontExtents) == 48
+    check sizeof(raw.HbSegmentProperties) == 8 + 3 * sizeof(pointer)
+    check offsetOf(raw.HbFeature, ending) == 12
+    check offsetOf(raw.HbGlyphInfo, cluster) == 8
+    check offsetOf(raw.HbGlyphPosition, yOffset) == 12
+    check offsetOf(raw.HbSegmentProperties, language) == 8
     check sizeof(fribidi_raw.FriBidiChar) == 4
     check sizeof(fribidi_raw.FriBidiCharType) == 4
     check sizeof(fribidi_raw.FriBidiParType) == 4
