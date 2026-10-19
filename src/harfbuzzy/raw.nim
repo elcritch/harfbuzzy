@@ -6,9 +6,7 @@
 
 import std/os
 
-const hbStaticEnabled* =
-  defined(harfbuzzyStatic) or defined(feature.harfbuzzy.static) or
-  defined(features.harfbuzzy.static)
+const hbStaticEnabled* = defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)
 
 when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz
