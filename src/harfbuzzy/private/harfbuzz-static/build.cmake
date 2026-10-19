@@ -15,7 +15,8 @@ endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -S "${HARFBUZZY_SOURCE_DIR}" -B "${HARFBUZZY_BUILD_DIR}"
-    -DCMAKE_BUILD_TYPE=Release ${runtime_args} ${extra_args}
+    -DCMAKE_BUILD_TYPE=Release "-DHARFBUZZY_BUILD_JOBS=${HARFBUZZY_BUILD_JOBS}"
+    ${runtime_args} ${extra_args}
   RESULT_VARIABLE configure_result
 )
 if(NOT configure_result STREQUAL "0")
@@ -24,7 +25,7 @@ endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" --build "${HARFBUZZY_BUILD_DIR}" --config Release
-    --target harfbuzz harfbuzz-subset --parallel "${HARFBUZZY_BUILD_JOBS}"
+    --target harfbuzz harfbuzz-subset fribidi-native --parallel "${HARFBUZZY_BUILD_JOBS}"
   RESULT_VARIABLE build_result
 )
 if(NOT build_result STREQUAL "0")

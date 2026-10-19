@@ -86,6 +86,28 @@ suite "harfbuzzy raw bindings":
     when raw.hbStaticEnabled:
       check versionString() == raw.HB_VERSION_STRING
 
+  test "FriBidi classifies brackets and resolves mixed-direction levels":
+    var
+      chars = [0x61'u32, 0x28'u32, 0x5D0'u32, 0x29'u32]
+      types: array[4, FriBidiCharType]
+      brackets: array[4, FriBidiBracketType]
+      levels: array[4, FriBidiLevel]
+      direction = FRIBIDI_PAR_LTR
+    check fribidi_get_bidi_type(chars[2]) == FRIBIDI_TYPE_RTL
+    fribidi_get_bidi_types(addr chars[0], chars.len.cint, addr types[0])
+    check types[2] == FRIBIDI_TYPE_RTL
+    fribidi_get_bracket_types(
+      addr chars[0], chars.len.cint, addr types[0], addr brackets[0]
+    )
+    check brackets[1] != 0
+    check brackets[3] != 0
+    check fribidi_get_par_embedding_levels_ex(
+      addr types[0], addr brackets[0], chars.len.cint, addr direction, addr levels[0]
+    ) > 0
+    check direction == FRIBIDI_PAR_LTR
+    check levels[0] == 0
+    check fribidi_level_is_rtl(levels[2])
+
   test "array APIs can be used as C function pointers":
     var
       listShapers = raw.hb_shape_list_shapers

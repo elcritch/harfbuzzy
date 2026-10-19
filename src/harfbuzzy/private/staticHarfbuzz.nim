@@ -1,9 +1,10 @@
-## Compile-time support for the opt-in bundled HarfBuzz build.
+## Compile-time support for the opt-in bundled HarfBuzz and FriBidi build.
 
 import std/[hashes, os]
 
 const
   harfbuzzVersion* = "14.2.0"
+  fribidiVersion* = "1.0.16"
   harfbuzzyStaticCache* {.strdefine.} = ""
   harfbuzzyStaticCmake* {.strdefine.} = "cmake"
   harfbuzzyStaticCmakeArgs* {.strdefine.} = ""
@@ -29,6 +30,15 @@ const
   harfbuzzBuildDir* = cacheDir / ("harfbuzz-" & harfbuzzVersion) / targetName / buildKey
   harfbuzzSourceDir* = harfbuzzBuildDir / "_deps" / "harfbuzz-src" / "src"
   harfbuzzLibDir = harfbuzzBuildDir / "lib"
+  fribidiInstallDir* = harfbuzzBuildDir / "fribidi-install"
+  fribidiIncludeDir* = fribidiInstallDir / "include" / "fribidi"
+  fribidiSourceDir* = harfbuzzBuildDir / "_deps" / "fribidi-src"
+
+  fribidiStaticLib* =
+    when defined(windows):
+      fribidiInstallDir / "lib" / "fribidi.lib"
+    else:
+      fribidiInstallDir / "lib" / "libfribidi.a"
 
   harfbuzzStaticLib* =
     when defined(windows):
@@ -58,7 +68,7 @@ proc runBuildCommand(command: string) {.compileTime.} =
   let (output, exitCode) = gorgeEx(command)
   if exitCode != 0:
     raise
-      newException(IOError, "HarfBuzz native build failed: " & command & "\n" & output)
+      newException(IOError, "Harfbuzzy native build failed: " & command & "\n" & output)
 
 static:
   if not fileExists(harfbuzzCmakeDir / "CMakeLists.txt"):
@@ -68,7 +78,8 @@ static:
 
   runBuildCommand(buildCommand)
 
-  if not fileExists(harfbuzzStaticLib) or not fileExists(harfbuzzSubsetStaticLib):
+  if not fileExists(harfbuzzStaticLib) or not fileExists(harfbuzzSubsetStaticLib) or
+      not fileExists(fribidiStaticLib):
     raise newException(
-      IOError, "harfbuzzy's static HarfBuzz build did not produce its libraries"
+      IOError, "harfbuzzy's static native build did not produce its libraries"
     )

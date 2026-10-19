@@ -113,8 +113,8 @@ nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
   tests/tharfbuzzy.nim
 ```
 
-To download HarfBuzz 14.2.0, build it, and statically link the HarfBuzz and
-HarfBuzz subset libraries, request the `static` Atlas feature in your manifest:
+To download and statically link HarfBuzz 14.2.0 (including its subset library)
+and FriBidi 1.0.16, request the `static` Atlas feature in your manifest:
 
 ```nim
 requires "gh:elcritch/harfbuzzy[static]"
@@ -128,8 +128,11 @@ build path with `-d:harfbuzzyStatic`:
 nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
 ```
 
-This opt-in build requires CMake 3.24 or newer and a native C/C++ toolchain. The release
-archive is pinned by version and SHA-256 hash. Build files are cached under the
+This opt-in build uses Nim's C backend and requires CMake 3.24 or newer, Meson,
+Ninja, and a native C/C++ toolchain. Both release archives are pinned by version
+and SHA-256 hash. FriBidi
+uses its upstream Meson build to generate its Unicode tables and headers.
+Build files are cached under the
 platform cache directory (for example, `~/.cache/harfbuzzy` on Linux), so later
 compiles reuse the same build without downloading the source again. Separate
 checkouts, compiler settings, and CMake arguments use separate build directories.
@@ -147,10 +150,15 @@ nim c -d:harfbuzzyStatic \
 Pass additional CMake configuration arguments with
 `-d:harfbuzzyStaticCmakeArgs="..."`, or select a CMake executable with
 `-d:harfbuzzyStaticCmake=/path/to/cmake`. On Windows, the static build requires
-MSVC and `--cc:vcc`. FriBidi remains dynamically loaded in this mode.
+MSVC and `--cc:vcc`. Neither HarfBuzz nor FriBidi needs a shared library in this mode.
 Run Windows builds from a Visual Studio Developer shell. The native archives
 use the static MSVC runtime (`/MT`) by default; if your Nim build uses `/MD`,
 pass `-d:harfbuzzyStaticCmakeArgs="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"`.
+Both native builds use the same compiler and MSVC runtime.
+
+The downloaded source trees retain their upstream `COPYING` files. HarfBuzz uses
+its permissive license; FriBidi is LGPL-2.1-or-later. Static linking does not
+change either library's license.
 
 Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
 matching vcpkg libraries. Static builds require MSVC on Windows.

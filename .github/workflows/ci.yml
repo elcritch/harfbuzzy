@@ -32,11 +32,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake libharfbuzz-dev libfribidi-dev fonts-noto-core fonts-noto-extra
+            cmake meson ninja-build libharfbuzz-dev libfribidi-dev fonts-noto-core fonts-noto-extra
 
       - name: Install macOS libraries
         if: runner.os == 'macOS'
-        run: brew install cmake harfbuzz fribidi
+        run: brew install cmake meson ninja harfbuzz fribidi
 
       - name: Install Windows libraries
         if: runner.os == 'Windows'
@@ -56,6 +56,11 @@ jobs:
           }
           Copy-Item "$root/bin/*.dll" tests/
           Copy-Item "$root/bin/*.dll" examples/
+
+      - name: Install Windows native build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python -m pip install meson ninja
 
       - name: Cache native builds
         uses: actions/cache@v4
@@ -99,7 +104,7 @@ jobs:
           nim c @flags examples/shape_paragraph.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Test bundled static HarfBuzz
+      - name: Test bundled static text libraries
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -108,6 +113,7 @@ jobs:
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
             --out:tests/harfbuzzy-static tests/tharfbuzzy.nim
           nim c --app:lib --noMain -d:harfbuzzyStatic \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
@@ -118,7 +124,7 @@ jobs:
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             --out:tests/harfbuzzy-static-font tests/fixtures/staticfont.nim
 
-      - name: Test bundled static HarfBuzz with MSVC
+      - name: Test bundled static text libraries with MSVC
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -127,7 +133,7 @@ jobs:
             "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
             -d:harfbuzzyDynlib=harfbuzzy-missing-core `
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
-            "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL" `
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
             --out:tests/harfbuzzy-static.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
@@ -137,7 +143,7 @@ jobs:
             --out:tests/harfbuzzy-static-font.exe tests/fixtures/staticfont.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Verify HarfBuzz is statically linked
+      - name: Verify text libraries are statically linked
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -147,20 +153,20 @@ jobs:
             ldd tests/harfbuzzy-static > tests/static-dependencies.txt
           fi
           cat tests/static-dependencies.txt
-          if grep -Ei 'libharfbuzz[^[:space:]]*\.(so|dylib)' tests/static-dependencies.txt; then
-            echo 'The static executable depends on shared HarfBuzz.'
+          if grep -Ei 'lib(harfbuzz|fribidi)[^[:space:]]*\.(so|dylib)' tests/static-dependencies.txt; then
+            echo 'The static executable depends on shared HarfBuzz or FriBidi.'
             exit 1
           fi
 
-      - name: Verify HarfBuzz is statically linked with MSVC
+      - name: Verify text libraries are statically linked with MSVC
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $dependencies = & dumpbin /dependents tests/harfbuzzy-static.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $dependencies
-          if ($dependencies -match '(?i)(lib)?harfbuzz\S*\.dll') {
-            throw 'The static executable depends on shared HarfBuzz.'
+          if ($dependencies -match '(?i)(lib)?(harfbuzz|fribidi)\S*\.dll') {
+            throw 'The static executable depends on shared HarfBuzz or FriBidi.'
           }
 
       - name: Enable the Atlas static feature
@@ -174,6 +180,7 @@ jobs:
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
             --out:tests/harfbuzzy-static-feature tests/tharfbuzzy.nim
 
       - name: Test the Atlas static feature with MSVC
@@ -184,7 +191,7 @@ jobs:
             "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
             -d:harfbuzzyDynlib=harfbuzzy-missing-core `
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
-            "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL" `
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
             --out:tests/harfbuzzy-static-feature.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
