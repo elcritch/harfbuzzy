@@ -34,11 +34,8 @@ const
   fribidiIncludeDir* = fribidiInstallDir / "include" / "fribidi"
   fribidiSourceDir* = harfbuzzBuildDir / "_deps" / "fribidi-src"
 
-  fribidiStaticLib* =
-    when defined(windows):
-      fribidiInstallDir / "lib" / "fribidi.lib"
-    else:
-      fribidiInstallDir / "lib" / "libfribidi.a"
+  # Meson's static archive keeps its .a name when built with MSVC, too.
+  fribidiStaticLib* = fribidiInstallDir / "lib" / "libfribidi.a"
 
   harfbuzzStaticLib* =
     when defined(windows):
@@ -81,5 +78,7 @@ static:
   if not fileExists(harfbuzzStaticLib) or not fileExists(harfbuzzSubsetStaticLib) or
       not fileExists(fribidiStaticLib):
     raise newException(
-      IOError, "harfbuzzy's static native build did not produce its libraries"
+      IOError,
+      "harfbuzzy's static native build did not produce its libraries:\n" &
+        harfbuzzStaticLib & "\n" & harfbuzzSubsetStaticLib & "\n" & fribidiStaticLib,
     )

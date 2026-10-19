@@ -115,10 +115,9 @@ if(MSVC)
   else()
     message(FATAL_ERROR "Static FriBidi requires a Release MSVC runtime: MultiThreaded or MultiThreadedDLL")
   endif()
-  set(fribidi_archive fribidi.lib)
-else()
-  set(fribidi_archive libfribidi.a)
 endif()
+# Meson uses libfoo.a for static archives even with MSVC; the contents are COFF.
+set(fribidi_archive libfribidi.a)
 
 ExternalProject_Add(fribidi-native
   SOURCE_DIR "${fribidi_SOURCE_DIR}"
