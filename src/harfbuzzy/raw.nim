@@ -82,6 +82,50 @@ when defined(harfbuzzyStatic):
   {.pragma: hbDynlib, header: hbHeader.}
   {.pragma: hbAatDynlib, header: hbAatHeader.}
   {.pragma: hbSubsetDynlib, header: hbSubsetHeader.}
+  # Header-based calls require native C struct types. The dynlib path retains
+  # its Nim-defined value types for compatibility with C++ callers.
+  {.pragma: hbVarIntType, importc: "hb_var_int_t", header: hbHeader, completeStruct.}
+  {.pragma: hbVarNumType, importc: "hb_var_num_t", header: hbHeader, completeStruct.}
+  {.pragma: hbFeatureType, importc: "hb_feature_t", header: hbHeader, completeStruct.}
+  {.
+    pragma: hbVariationType, importc: "hb_variation_t", header: hbHeader, completeStruct
+  .}
+  {.
+    pragma: hbGlyphExtentsType,
+    importc: "hb_glyph_extents_t",
+    header: hbHeader,
+    completeStruct
+  .}
+  {.
+    pragma: hbFontExtentsType,
+    importc: "hb_font_extents_t",
+    header: hbHeader,
+    completeStruct
+  .}
+  {.
+    pragma: hbGlyphInfoType,
+    importc: "hb_glyph_info_t",
+    header: hbHeader,
+    completeStruct
+  .}
+  {.
+    pragma: hbGlyphPositionType,
+    importc: "hb_glyph_position_t",
+    header: hbHeader,
+    completeStruct
+  .}
+  {.
+    pragma: hbSegmentPropertiesType,
+    importc: "hb_segment_properties_t",
+    header: hbHeader,
+    completeStruct
+  .}
+  {.
+    pragma: hbUserDataKeyType,
+    importc: "hb_user_data_key_t",
+    header: hbHeader,
+    completeStruct
+  .}
   const hbArrayPrefix = "harfbuzzy_"
   const hbArrayHeader = currentSourcePath().parentDir() / "private" / "staticArrays.h"
   {.pragma: hbArrayDynlib, header: hbArrayHeader.}
@@ -89,6 +133,16 @@ else:
   {.pragma: hbDynlib, dynlib: hbLib.}
   {.pragma: hbAatDynlib, dynlib: hbLib.}
   {.pragma: hbSubsetDynlib, dynlib: hbSubsetLib.}
+  {.pragma: hbVarIntType.}
+  {.pragma: hbVarNumType.}
+  {.pragma: hbFeatureType.}
+  {.pragma: hbVariationType.}
+  {.pragma: hbGlyphExtentsType.}
+  {.pragma: hbFontExtentsType.}
+  {.pragma: hbGlyphInfoType.}
+  {.pragma: hbGlyphPositionType.}
+  {.pragma: hbSegmentPropertiesType.}
+  {.pragma: hbUserDataKeyType.}
   const hbArrayPrefix = ""
   {.pragma: hbArrayDynlib, dynlib: hbLib.}
 
@@ -113,7 +167,7 @@ type
   HbSubsetSets* = distinct cuint
   HbSubsetFlags* = distinct cuint
 
-  HbVarInt* {.importc: "hb_var_int_t", header: hbHeader, bycopy, union.} = object
+  HbVarInt* {.hbVarIntType, bycopy, union.} = object
     u32*: uint32
     i32*: int32
     u16*: array[2, uint16]
@@ -121,7 +175,7 @@ type
     u8*: array[4, uint8]
     i8*: array[4, int8]
 
-  HbVarNum* {.importc: "hb_var_num_t", header: hbHeader, bycopy, union.} = object
+  HbVarNum* {.hbVarNumType, bycopy, union.} = object
     f*: cfloat
     u32*: uint32
     i32*: int32
@@ -130,23 +184,23 @@ type
     u8*: array[4, uint8]
     i8*: array[4, int8]
 
-  HbFeature* {.importc: "hb_feature_t", header: hbHeader, bycopy.} = object
+  HbFeature* {.hbFeatureType, bycopy.} = object
     tag*: HbTag
     value*: uint32
     start*: cuint
     ending* {.importc: "end".}: cuint
 
-  HbVariation* {.importc: "hb_variation_t", header: hbHeader, bycopy.} = object
+  HbVariation* {.hbVariationType, bycopy.} = object
     tag*: HbTag
     value*: cfloat
 
-  HbGlyphExtents* {.importc: "hb_glyph_extents_t", header: hbHeader, bycopy.} = object
+  HbGlyphExtents* {.hbGlyphExtentsType, bycopy.} = object
     xBearing* {.importc: "x_bearing".}: HbPosition
     yBearing* {.importc: "y_bearing".}: HbPosition
     width*: HbPosition
     height*: HbPosition
 
-  HbFontExtents* {.importc: "hb_font_extents_t", header: hbHeader, bycopy.} = object
+  HbFontExtents* {.hbFontExtentsType, bycopy.} = object
     ascender*: HbPosition
     descender*: HbPosition
     lineGap* {.importc: "line_gap".}: HbPosition
@@ -160,28 +214,28 @@ type
     reserved2*: HbPosition
     reserved1*: HbPosition
 
-  HbGlyphInfo* {.importc: "hb_glyph_info_t", header: hbHeader, bycopy.} = object
+  HbGlyphInfo* {.hbGlyphInfoType, bycopy.} = object
     codepoint*: HbCodepoint
     mask*: HbMask
     cluster*: uint32
     var1*: HbVarInt
     var2*: HbVarInt
 
-  HbGlyphPosition* {.importc: "hb_glyph_position_t", header: hbHeader, bycopy.} = object
+  HbGlyphPosition* {.hbGlyphPositionType, bycopy.} = object
     xAdvance* {.importc: "x_advance".}: HbPosition
     yAdvance* {.importc: "y_advance".}: HbPosition
     xOffset* {.importc: "x_offset".}: HbPosition
     yOffset* {.importc: "y_offset".}: HbPosition
     var1* {.importc: "var".}: HbVarInt
 
-  HbSegmentProperties* {.importc: "hb_segment_properties_t", header: hbHeader, bycopy.} = object
+  HbSegmentProperties* {.hbSegmentPropertiesType, bycopy.} = object
     direction*: HbDirection
     script*: HbScript
     language*: HbLanguage
     reserved1*: pointer
     reserved2*: pointer
 
-  HbUserDataKey* {.importc: "hb_user_data_key_t", header: hbHeader, bycopy.} = object
+  HbUserDataKey* {.hbUserDataKeyType, bycopy.} = object
     unused*: cchar
 
   HbDestroyFunc* = proc(userData: pointer) {.cdecl.}

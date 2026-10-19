@@ -80,7 +80,9 @@ jobs:
 
       - name: Run dynamic tests
         if: runner.os != 'Windows'
-        run: nim test
+        run: |
+          nim test
+          nim cpp -r --out:tests/harfbuzzy-dynamic-cpp tests/tharfbuzzy.nim
 
       - name: Run dynamic tests with MSVC
         if: runner.os == 'Windows'
@@ -91,6 +93,8 @@ jobs:
             "-d:harfbuzzySubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
             "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL")
           nim c -r @flags tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim cpp -r @flags --out:tests/harfbuzzy-dynamic-cpp.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c @flags examples/shape_paragraph.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

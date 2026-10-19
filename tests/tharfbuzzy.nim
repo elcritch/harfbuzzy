@@ -47,6 +47,18 @@ const
   hebrewText = "\u05E9\u05DC\u05D5\u05DD"
   arabicText = "\u0633\u0644\u0627\u0645"
 
+static:
+  doAssert sizeof(raw.HbVarInt) == 4
+  doAssert sizeof(raw.HbVarNum) == 4
+  doAssert sizeof(raw.HbFeature) == 16
+  doAssert sizeof(raw.HbVariation) == 8
+  doAssert sizeof(raw.HbGlyphExtents) == 16
+  doAssert sizeof(raw.HbFontExtents) == 48
+  doAssert sizeof(raw.HbGlyphInfo) == 20
+  doAssert sizeof(raw.HbGlyphPosition) == 20
+  doAssert sizeof(raw.HbSegmentProperties) == 8 + 3 * sizeof(pointer)
+  doAssert sizeof(raw.HbUserDataKey) == 1
+
 suite "harfbuzzy raw bindings":
   test "value struct layouts match HarfBuzz headers":
     check sizeof(raw.HbVarInt) == 4
@@ -73,6 +85,30 @@ suite "harfbuzzy raw bindings":
     check version().major >= 1
     when defined(harfbuzzyStatic):
       check versionString() == raw.HB_VERSION_STRING
+
+  test "array APIs can be used as C function pointers":
+    var
+      listShapers = raw.hb_shape_list_shapers
+      listFormats = raw.hb_buffer_serialize_list_formats
+      shapeFull = raw.hb_shape_full
+      createPlan = raw.hb_shape_plan_create
+      createCachedPlan = raw.hb_shape_plan_create_cached
+      props = raw.HbSegmentProperties(
+        direction: raw.HB_DIRECTION_LTR, script: raw.HB_SCRIPT_LATIN
+      )
+    check listShapers() != nil
+    check listFormats() != nil
+    let buffer = raw.hb_buffer_create()
+    defer:
+      raw.hb_buffer_destroy(buffer)
+    raw.hb_buffer_set_segment_properties(buffer, addr props)
+    check shapeFull(raw.hb_font_get_empty(), buffer, nil, 0, nil) != 0
+    let plan = createPlan(raw.hb_face_get_empty(), addr props, nil, 0, nil)
+    check plan != nil
+    raw.hb_shape_plan_destroy(plan)
+    let cachedPlan = createCachedPlan(raw.hb_face_get_empty(), addr props, nil, 0, nil)
+    check cachedPlan != nil
+    raw.hb_shape_plan_destroy(cachedPlan)
 
 suite "harfbuzzy wrapper":
   test "tags, scripts, languages, directions, and features":
