@@ -112,6 +112,11 @@ jobs:
           nim c --app:lib --noMain -d:harfbuzzyStatic \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             tests/fixtures/staticlib.nim
+          nim c -r -d:harfbuzzyStatic \
+            --passC:-Werror=implicit-function-declaration \
+            "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
+            --out:tests/harfbuzzy-static-font tests/fixtures/staticfont.nim
 
       - name: Test bundled static HarfBuzz with MSVC
         if: runner.os == 'Windows'
@@ -124,6 +129,12 @@ jobs:
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
             "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL" `
             --out:tests/harfbuzzy-static.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            --passC:/we4013 -d:harfbuzzyStatic `
+            "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
+            --out:tests/harfbuzzy-static-font.exe tests/fixtures/staticfont.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify HarfBuzz is statically linked

@@ -46,6 +46,7 @@ const
 
 when hbStaticEnabled:
   const hbAatHeader = "hb-aat.h"
+  const hbOtHeader = "hb-ot.h"
 
 const hbDynlibOverride* {.strdefine: "harfbuzzyDynlib".} = ""
 
@@ -85,6 +86,7 @@ const hbSubsetLib* =
 when hbStaticEnabled:
   {.pragma: hbDynlib, header: hbHeader.}
   {.pragma: hbAatDynlib, header: hbAatHeader.}
+  {.pragma: hbOtDynlib, header: hbOtHeader.}
   {.pragma: hbSubsetDynlib, header: hbSubsetHeader.}
   # Header-based calls require native C struct types. The dynlib path retains
   # its Nim-defined value types for compatibility with C++ callers.
@@ -136,6 +138,7 @@ when hbStaticEnabled:
 else:
   {.pragma: hbDynlib, dynlib: hbLib.}
   {.pragma: hbAatDynlib, dynlib: hbLib.}
+  {.pragma: hbOtDynlib, dynlib: hbLib.}
   {.pragma: hbSubsetDynlib, dynlib: hbSubsetLib.}
   {.pragma: hbVarIntType.}
   {.pragma: hbVarNumType.}
@@ -633,7 +636,7 @@ proc hb_font_get_glyph_extents*(
 
 proc hb_ot_font_set_funcs*(
   font: HbFont
-) {.cdecl, importc: "hb_ot_font_set_funcs", hbDynlib.}
+) {.cdecl, importc: "hb_ot_font_set_funcs", hbOtDynlib.}
 
 proc hb_aat_layout_has_substitution*(
   face: HbFace
@@ -649,11 +652,11 @@ proc hb_aat_layout_has_tracking*(
 
 proc hb_ot_layout_has_substitution*(
   face: HbFace
-): HbBool {.cdecl, importc: "hb_ot_layout_has_substitution", hbDynlib.}
+): HbBool {.cdecl, importc: "hb_ot_layout_has_substitution", hbOtDynlib.}
 
 proc hb_ot_layout_has_positioning*(
   face: HbFace
-): HbBool {.cdecl, importc: "hb_ot_layout_has_positioning", hbDynlib.}
+): HbBool {.cdecl, importc: "hb_ot_layout_has_positioning", hbOtDynlib.}
 
 proc hb_ot_layout_table_get_feature_tags*(
   face: HbFace,
@@ -661,11 +664,11 @@ proc hb_ot_layout_table_get_feature_tags*(
   startOffset: cuint,
   featureCount: ptr cuint,
   featureTags: ptr HbTag,
-): cuint {.cdecl, importc: "hb_ot_layout_table_get_feature_tags", hbDynlib.}
+): cuint {.cdecl, importc: "hb_ot_layout_table_get_feature_tags", hbOtDynlib.}
 
 proc hb_ot_layout_table_find_script*(
   face: HbFace, tableTag, scriptTag: HbTag, scriptIndex: ptr cuint
-): HbBool {.cdecl, importc: "hb_ot_layout_table_find_script", hbDynlib.}
+): HbBool {.cdecl, importc: "hb_ot_layout_table_find_script", hbOtDynlib.}
 
 proc hb_ot_layout_script_select_language2*(
   face: HbFace,
@@ -675,7 +678,7 @@ proc hb_ot_layout_script_select_language2*(
   languageTags: ptr HbTag,
   languageIndex: ptr cuint,
   chosenLanguage: ptr HbTag,
-): HbBool {.cdecl, importc: "hb_ot_layout_script_select_language2", hbDynlib.}
+): HbBool {.cdecl, importc: "hb_ot_layout_script_select_language2", hbOtDynlib.}
 
 proc hb_ot_layout_language_get_feature_tags*(
   face: HbFace,
@@ -685,7 +688,7 @@ proc hb_ot_layout_language_get_feature_tags*(
   startOffset: cuint,
   featureCount: ptr cuint,
   featureTags: ptr HbTag,
-): cuint {.cdecl, importc: "hb_ot_layout_language_get_feature_tags", hbDynlib.}
+): cuint {.cdecl, importc: "hb_ot_layout_language_get_feature_tags", hbOtDynlib.}
 
 proc hb_buffer_create*(): HbBuffer {.cdecl, importc: "hb_buffer_create", hbDynlib.}
 proc hb_buffer_create_similar*(
