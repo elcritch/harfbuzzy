@@ -1,11 +1,28 @@
 ## Minimal FriBidi bindings used by the paragraph shaping pipeline.
 
-when defined(macosx):
+when defined(macosx) or defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
   import std/os
+
+when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
+  import harfbuzzy/private/staticHarfbuzz
+
+  when defined(vcc):
+    {.
+      passC:
+        "/I" & quoteShell(staticHarfbuzz.fribidiIncludeDir) & " /DFRIBIDI_LIB_STATIC"
+    .}
+  else:
+    {.
+      passC:
+        "-I" & quoteShell(staticHarfbuzz.fribidiIncludeDir) & " -DFRIBIDI_LIB_STATIC"
+    .}
+  {.passL: quoteShell(staticHarfbuzz.fribidiStaticLib).}
+  {.pragma: fribidiImport, header: "fribidi.h".}
 
 const fribidiDynlibOverride* {.strdefine: "harfbuzzyFribidiDynlib".} = ""
 
-when defined(macosx):
+when defined(macosx) and
+    not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
   const fribidiDetectedBrewPrefix = staticExec(
     "sh -c 'if command -v brew >/dev/null 2>&1; then brew --prefix fribidi 2>/dev/null | tr -d \"\\n\"; fi'"
   )
@@ -32,6 +49,9 @@ const fribidiLib* =
     "libfribidi.dylib"
   else:
     "libfribidi.so(|.0)"
+
+when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+  {.pragma: fribidiImport, dynlib: fribidiLib.}
 
 type
   FriBidiBoolean* = cint
@@ -74,18 +94,18 @@ func fribidi_is_arabic*(typ: FriBidiCharType): bool =
 
 proc fribidi_get_bidi_type*(
   ch: FriBidiChar
-): FriBidiCharType {.cdecl, importc: "fribidi_get_bidi_type", dynlib: fribidiLib.}
+): FriBidiCharType {.cdecl, importc: "fribidi_get_bidi_type", fribidiImport.}
 
 proc fribidi_get_bidi_types*(
   str: ptr FriBidiChar, len: FriBidiStrIndex, btypes: ptr FriBidiCharType
-) {.cdecl, importc: "fribidi_get_bidi_types", dynlib: fribidiLib.}
+) {.cdecl, importc: "fribidi_get_bidi_types", fribidiImport.}
 
 proc fribidi_get_bracket_types*(
   str: ptr FriBidiChar,
   len: FriBidiStrIndex,
   types: ptr FriBidiCharType,
   btypes: ptr FriBidiBracketType,
-) {.cdecl, importc: "fribidi_get_bracket_types", dynlib: fribidiLib.}
+) {.cdecl, importc: "fribidi_get_bracket_types", fribidiImport.}
 
 proc fribidi_get_par_embedding_levels_ex*(
   bidiTypes: ptr FriBidiCharType,
@@ -93,6 +113,4 @@ proc fribidi_get_par_embedding_levels_ex*(
   len: FriBidiStrIndex,
   pbaseDir: ptr FriBidiParType,
   embeddingLevels: ptr FriBidiLevel,
-): FriBidiLevel {.
-  cdecl, importc: "fribidi_get_par_embedding_levels_ex", dynlib: fribidiLib
-.}
+): FriBidiLevel {.cdecl, importc: "fribidi_get_par_embedding_levels_ex", fribidiImport.}

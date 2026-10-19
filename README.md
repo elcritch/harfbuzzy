@@ -100,10 +100,11 @@ nim test
 types own HarfBuzz handles with Nim destructors, so callers do not call
 `hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
 
-The raw modules include HarfBuzz headers from `deps/harfbuzz/src` when that
-checkout exists, otherwise they use `pkg-config --cflags harfbuzz`. They
-dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On macOS
-they use Homebrew prefixes when available. Override library paths when needed:
+By default, the raw modules include HarfBuzz headers from `deps/harfbuzz/src`
+when that checkout exists, otherwise they use `pkg-config --cflags harfbuzz`.
+They dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On
+macOS they use Homebrew prefixes when available. Override library paths when
+needed:
 
 ```sh
 nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
@@ -111,6 +112,57 @@ nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
   -d:harfbuzzyFribidiDynlib=/path/to/libfribidi.dylib \
   tests/tharfbuzzy.nim
 ```
+
+To download and statically link HarfBuzz 14.2.0 (including its subset library)
+and FriBidi 1.0.16, request the `static` Atlas feature in your manifest:
+
+```nim
+requires "gh:elcritch/harfbuzzy[static]"
+```
+
+Run `atlas install` after changing the requirement. When building this repository
+directly, use `atlas install --features:static`. You can also select the same
+build path with `-d:harfbuzzyStatic`:
+
+```sh
+nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
+```
+
+This opt-in build uses Nim's C backend and requires CMake 3.24 or newer, Meson,
+Ninja, and a native C/C++ toolchain. Both release archives are pinned by version
+and SHA-256 hash. FriBidi
+uses its upstream Meson build to generate its Unicode tables and headers.
+Build files are cached under the
+platform cache directory (for example, `~/.cache/harfbuzzy` on Linux), so later
+compiles reuse the same build without downloading the source again. Separate
+checkouts, compiler settings, and CMake arguments use separate build directories.
+Concurrent builds sharing a directory wait for its native build lock.
+The native build uses two jobs by default; set `CMAKE_BUILD_PARALLEL_LEVEL` to
+choose another limit.
+Override the cache location when needed:
+
+```sh
+nim c -d:harfbuzzyStatic \
+  -d:harfbuzzyStaticCache=/path/to/cache \
+  your_program.nim
+```
+
+Pass additional CMake configuration arguments with
+`-d:harfbuzzyStaticCmakeArgs="..."`, or select a CMake executable with
+`-d:harfbuzzyStaticCmake=/path/to/cmake`. On Windows, the static build requires
+MSVC and `--cc:vcc`. Neither HarfBuzz nor FriBidi needs a shared library in this mode.
+Run Windows builds from a Visual Studio Developer shell. The native archives
+use the static MSVC runtime (`/MT`) by default; if your Nim build uses `/MD`,
+pass `-d:harfbuzzyStaticCmakeArgs="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"`.
+Both native builds use the same compiler and MSVC runtime.
+
+The downloaded source trees retain their upstream `COPYING` files. HarfBuzz uses
+its permissive license; FriBidi is LGPL-2.1-or-later. Static linking does not
+change either library's license.
+
+Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
+matching vcpkg libraries. Static builds require MSVC on Windows.
+The static archives can also be linked into a shared library on Unix.
 
 ## Regenerating Raw Seeds
 
