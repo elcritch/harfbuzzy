@@ -114,7 +114,15 @@ nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
 ```
 
 To download HarfBuzz 14.2.0, build it, and statically link the HarfBuzz and
-HarfBuzz subset libraries, compile with `-d:harfbuzzyStatic`:
+HarfBuzz subset libraries, request the `static` Atlas feature in your manifest:
+
+```nim
+requires "gh:elcritch/harfbuzzy[static]"
+```
+
+Run `atlas install` after changing the requirement. When building this repository
+directly, use `atlas install --features:static`. You can also select the same
+build path with `-d:harfbuzzyStatic`:
 
 ```sh
 nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
@@ -143,6 +151,9 @@ MSVC and `--cc:vcc`. FriBidi remains dynamically loaded in this mode.
 Run Windows builds from a Visual Studio Developer shell. The native archives
 use the static MSVC runtime (`/MT`) by default; if your Nim build uses `/MD`,
 pass `-d:harfbuzzyStaticCmakeArgs="-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"`.
+
+Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
+matching vcpkg libraries. Static builds require MSVC on Windows.
 The static archives can also be linked into a shared library on Unix.
 
 ## Regenerating Raw Seeds

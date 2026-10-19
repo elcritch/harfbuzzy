@@ -83,7 +83,7 @@ suite "harfbuzzy raw bindings":
     check versionString().len > 0
     check versionAtLeast(1, 0, 0)
     check version().major >= 1
-    when defined(harfbuzzyStatic):
+    when raw.hbStaticEnabled:
       check versionString() == raw.HB_VERSION_STRING
 
   test "array APIs can be used as C function pointers":

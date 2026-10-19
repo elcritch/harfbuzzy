@@ -151,3 +151,110 @@ jobs:
           if ($dependencies -match '(?i)(lib)?harfbuzz\S*\.dll') {
             throw 'The static executable depends on shared HarfBuzz.'
           }
+
+      - name: Enable the Atlas static feature
+        run: atlas install --features:static
+
+      - name: Test the Atlas static feature
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          nim c -r --passC:-Werror=incompatible-pointer-types \
+            "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            --out:tests/harfbuzzy-static-feature tests/tharfbuzzy.nim
+
+      - name: Test the Atlas static feature with MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
+            "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL" `
+            --out:tests/harfbuzzy-static-feature.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  test-mingw:
+    name: Windows MinGW dynlib
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-mingw-dynamic
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-mingw-dynamic
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.10'
+
+      - name: Select the native MinGW toolchain
+        shell: pwsh
+        run: |
+          $gcc = (Get-Command gcc.exe).Source
+          $mingwBin = Split-Path $gcc
+          $target = (& $gcc -dumpmachine).Trim()
+          if ($LASTEXITCODE -ne 0 -or $target -ne 'x86_64-w64-mingw32') {
+            throw "Expected native x64 MinGW, got $target from $gcc"
+          }
+          & $gcc --version
+          "HARFBUZZY_MINGW_BIN=$mingwBin" >> $env:GITHUB_ENV
+          $mingwBin >> $env:GITHUB_PATH
+
+      - name: Build MinGW shared libraries
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
+            'harfbuzz[core]:x64-mingw-dynamic' fribidi:x64-mingw-dynamic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $root = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-mingw-dynamic"
+          "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
+          "$root/bin" >> $env:GITHUB_PATH
+          foreach ($library in @('harfbuzz', 'harfbuzz-subset', 'fribidi')) {
+            $dll = Get-ChildItem "$root/bin/*.dll" | Where-Object Name -Match "^(lib)?$library(-[0-9]+)?\.dll$" | Select-Object -First 1
+            if (-not $dll) { throw "Missing MinGW $library DLL" }
+            $variable = $library.Replace('-', '_').ToUpper()
+            "HARFBUZZY_${variable}_DLL=$($dll.Name)" >> $env:GITHUB_ENV
+          }
+          Copy-Item "$root/bin/*.dll" tests/
+          Copy-Item "$root/bin/*.dll" examples/
+
+      - name: Install Atlas
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cygpath -w "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/nim-lang/atlas/HEAD/install.sh -o "$RUNNER_TEMP/install-atlas.sh"
+          ATLAS_INSTALL_DIR="$HOME/.local/bin" bash "$RUNNER_TEMP/install-atlas.sh"
+
+      - name: Install dependencies
+        run: atlas install
+
+      - name: Run MinGW dynlib tests
+        shell: pwsh
+        run: |
+          $flags = @('--cc:gcc', "--gcc.path=$env:HARFBUZZY_MINGW_BIN",
+            "--passC:-I`"$env:VCPKG_ROOT/include/harfbuzz`"",
+            "-d:harfbuzzyDynlib=$env:HARFBUZZY_HARFBUZZ_DLL",
+            "-d:harfbuzzySubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
+            "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL")
+          nim c -r @flags --out:tests/harfbuzzy-mingw-c.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim cpp -r @flags --out:tests/harfbuzzy-mingw-cpp.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c @flags examples/shape_paragraph.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify HarfBuzz uses runtime loading
+        shell: pwsh
+        run: |
+          foreach ($executable in @('tests/harfbuzzy-mingw-c.exe', 'tests/harfbuzzy-mingw-cpp.exe')) {
+            $headers = & "$env:HARFBUZZY_MINGW_BIN/objdump.exe" -p $executable
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($headers -match '(?i)DLL Name:\s*(lib)?(harfbuzz|fribidi)\S*\.dll') {
+              throw "$executable links text DLLs instead of loading them at runtime"
+            }
+          }

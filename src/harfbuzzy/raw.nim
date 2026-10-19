@@ -6,11 +6,15 @@
 
 import std/os
 
-when defined(harfbuzzyStatic):
+const hbStaticEnabled* =
+  defined(harfbuzzyStatic) or defined(feature.harfbuzzy.static) or
+  defined(features.harfbuzzy.static)
+
+when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz
 
 const hbSourceDir =
-  when defined(harfbuzzyStatic):
+  when hbStaticEnabled:
     staticHarfbuzz.harfbuzzSourceDir
   else:
     currentSourcePath().parentDir().parentDir().parentDir() / "deps" / "harfbuzz" / "src"
@@ -29,7 +33,7 @@ else:
   when hbPkgConfigCflags.len > 0:
     {.passC: hbPkgConfigCflags.}
 
-when defined(harfbuzzyStatic):
+when hbStaticEnabled:
   {.passL: quoteShell(staticHarfbuzz.harfbuzzSubsetStaticLib).}
   {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
   when defined(posix):
@@ -40,7 +44,7 @@ const
   hbHeader = "hb.h"
   hbSubsetHeader = "hb-subset.h"
 
-when defined(harfbuzzyStatic):
+when hbStaticEnabled:
   const hbAatHeader = "hb-aat.h"
 
 const hbDynlibOverride* {.strdefine: "harfbuzzyDynlib".} = ""
@@ -78,7 +82,7 @@ const hbSubsetLib* =
   else:
     "libharfbuzz-subset.so(|.0)"
 
-when defined(harfbuzzyStatic):
+when hbStaticEnabled:
   {.pragma: hbDynlib, header: hbHeader.}
   {.pragma: hbAatDynlib, header: hbAatHeader.}
   {.pragma: hbSubsetDynlib, header: hbSubsetHeader.}
