@@ -48,32 +48,32 @@ const
   arabicText = "\u0633\u0644\u0627\u0645"
 
 static:
-  doAssert sizeof(raw.HbVarInt) == 4
-  doAssert sizeof(raw.HbVarNum) == 4
-  doAssert sizeof(raw.HbFeature) == 16
-  doAssert sizeof(raw.HbVariation) == 8
-  doAssert sizeof(raw.HbGlyphExtents) == 16
-  doAssert sizeof(raw.HbFontExtents) == 48
-  doAssert sizeof(raw.HbGlyphInfo) == 20
-  doAssert sizeof(raw.HbGlyphPosition) == 20
-  doAssert sizeof(raw.HbSegmentProperties) == 8 + 3 * sizeof(pointer)
-  doAssert sizeof(raw.HbUserDataKey) == 1
+  doAssert sizeof(hb_var_int_t) == 4
+  doAssert sizeof(hb_var_num_t) == 4
+  doAssert sizeof(hb_feature_t) == 16
+  doAssert sizeof(hb_variation_t) == 8
+  doAssert sizeof(hb_glyph_extents_t) == 16
+  doAssert sizeof(hb_font_extents_t) == 48
+  doAssert sizeof(hb_glyph_info_t) == 20
+  doAssert sizeof(hb_glyph_position_t) == 20
+  doAssert sizeof(hb_segment_properties_t) == 8 + 3 * sizeof(pointer)
+  doAssert sizeof(hb_user_data_key_t) == 1
 
 suite "harfbuzzy raw bindings":
   test "value struct layouts match HarfBuzz headers":
-    check sizeof(raw.HbVarInt) == 4
-    check sizeof(raw.HbVarNum) == 4
-    check sizeof(raw.HbFeature) == 16
-    check sizeof(raw.HbVariation) == 8
-    check sizeof(raw.HbGlyphExtents) == 16
-    check sizeof(raw.HbGlyphInfo) == 20
-    check sizeof(raw.HbGlyphPosition) == 20
-    check sizeof(raw.HbFontExtents) == 48
-    check sizeof(raw.HbSegmentProperties) == 8 + 3 * sizeof(pointer)
-    check offsetOf(raw.HbFeature, ending) == 12
-    check offsetOf(raw.HbGlyphInfo, cluster) == 8
-    check offsetOf(raw.HbGlyphPosition, yOffset) == 12
-    check offsetOf(raw.HbSegmentProperties, language) == 8
+    check sizeof(hb_var_int_t) == 4
+    check sizeof(hb_var_num_t) == 4
+    check sizeof(hb_feature_t) == 16
+    check sizeof(hb_variation_t) == 8
+    check sizeof(hb_glyph_extents_t) == 16
+    check sizeof(hb_glyph_info_t) == 20
+    check sizeof(hb_glyph_position_t) == 20
+    check sizeof(hb_font_extents_t) == 48
+    check sizeof(hb_segment_properties_t) == 8 + 3 * sizeof(pointer)
+    check offsetOf(hb_feature_t, `end`) == 12
+    check offsetOf(hb_glyph_info_t, cluster) == 8
+    check offsetOf(hb_glyph_position_t, y_offset) == 12
+    check offsetOf(hb_segment_properties_t, language) == 8
     check sizeof(fribidi_raw.FriBidiChar) == 4
     check sizeof(fribidi_raw.FriBidiCharType) == 4
     check sizeof(fribidi_raw.FriBidiParType) == 4
@@ -83,8 +83,8 @@ suite "harfbuzzy raw bindings":
     check versionString().len > 0
     check versionAtLeast(1, 0, 0)
     check version().major >= 1
-    when raw.hbStaticEnabled:
-      check versionString() == raw.HB_VERSION_STRING
+    when hbStaticEnabled:
+      check versionString() == HB_VERSION_STRING
 
   test "FriBidi classifies brackets and resolves mixed-direction levels":
     var
@@ -93,44 +93,43 @@ suite "harfbuzzy raw bindings":
       brackets: array[4, FriBidiBracketType]
       levels: array[4, FriBidiLevel]
       direction = FRIBIDI_PAR_LTR
-    check fribidi_get_bidi_type(chars[2]) == FRIBIDI_TYPE_RTL
-    fribidi_get_bidi_types(addr chars[0], chars.len.cint, addr types[0])
+    check fribidi_raw.fribidi_get_bidi_type(chars[2]) == FRIBIDI_TYPE_RTL
+    fribidi_raw.fribidi_get_bidi_types(addr chars[0], chars.len.cint, addr types[0])
     check types[2] == FRIBIDI_TYPE_RTL
-    fribidi_get_bracket_types(
+    fribidi_raw.fribidi_get_bracket_types(
       addr chars[0], chars.len.cint, addr types[0], addr brackets[0]
     )
     check brackets[1] != 0
     check brackets[3] != 0
-    check fribidi_get_par_embedding_levels_ex(
+    check fribidi_raw.fribidi_get_par_embedding_levels_ex(
       addr types[0], addr brackets[0], chars.len.cint, addr direction, addr levels[0]
     ) > 0
     check direction == FRIBIDI_PAR_LTR
     check levels[0] == 0
-    check fribidi_level_is_rtl(levels[2])
+    check fribidi_raw.fribidi_level_is_rtl(levels[2])
 
   test "array APIs can be used as C function pointers":
     var
-      listShapers = raw.hb_shape_list_shapers
-      listFormats = raw.hb_buffer_serialize_list_formats
-      shapeFull = raw.hb_shape_full
-      createPlan = raw.hb_shape_plan_create
-      createCachedPlan = raw.hb_shape_plan_create_cached
-      props = raw.HbSegmentProperties(
-        direction: raw.HB_DIRECTION_LTR, script: raw.HB_SCRIPT_LATIN
-      )
+      listShapers = hb_shape_list_shapers
+      listFormats = hb_buffer_serialize_list_formats
+      shapeFull = hb_shape_full
+      createPlan = hb_shape_plan_create
+      createCachedPlan = hb_shape_plan_create_cached
+      props =
+        hb_segment_properties_t(direction: HB_DIRECTION_LTR, script: HB_SCRIPT_LATIN)
     check listShapers() != nil
     check listFormats() != nil
-    let buffer = raw.hb_buffer_create()
+    let buffer = hb_buffer_create()
     defer:
-      raw.hb_buffer_destroy(buffer)
-    raw.hb_buffer_set_segment_properties(buffer, addr props)
-    check shapeFull(raw.hb_font_get_empty(), buffer, nil, 0, nil) != 0
-    let plan = createPlan(raw.hb_face_get_empty(), addr props, nil, 0, nil)
+      hb_buffer_destroy(buffer)
+    hb_buffer_set_segment_properties(buffer, addr props)
+    check shapeFull(hb_font_get_empty(), buffer, nil, 0, nil) != 0
+    let plan = createPlan(hb_face_get_empty(), addr props, nil, 0, nil)
     check plan != nil
-    raw.hb_shape_plan_destroy(plan)
-    let cachedPlan = createCachedPlan(raw.hb_face_get_empty(), addr props, nil, 0, nil)
+    hb_shape_plan_destroy(plan)
+    let cachedPlan = createCachedPlan(hb_face_get_empty(), addr props, nil, 0, nil)
     check cachedPlan != nil
-    raw.hb_shape_plan_destroy(cachedPlan)
+    hb_shape_plan_destroy(cachedPlan)
 
 suite "harfbuzzy wrapper":
   test "tags, scripts, languages, directions, and features":
