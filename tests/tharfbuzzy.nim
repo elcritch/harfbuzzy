@@ -4,6 +4,9 @@ import harfbuzzy
 import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
 
+when hbStaticEnabled:
+  import harfbuzzy/private/staticHarfbuzz
+
 proc findFixtureFont(paths: openArray[string]): string =
   for path in paths:
     if fileExists(path):
@@ -48,6 +51,9 @@ const
   arabicText = "\u0633\u0644\u0627\u0645"
 
 static:
+  when hbStaticEnabled and not (defined(windows) or defined(cpp)):
+    doAssert defined(harfbuzzStatic)
+    doAssert not declared(hbLib)
   doAssert sizeof(hb_var_int_t) == 4
   doAssert sizeof(hb_var_num_t) == 4
   doAssert sizeof(hb_feature_t) == 16
@@ -84,7 +90,7 @@ suite "harfbuzzy raw bindings":
     check versionAtLeast(1, 0, 0)
     check version().major >= 1
     when hbStaticEnabled:
-      check versionString() == HB_VERSION_STRING
+      check versionString() == staticHarfbuzz.harfbuzzVersion
 
   test "FriBidi classifies brackets and resolves mixed-direction levels":
     var

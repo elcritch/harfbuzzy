@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           nim c -r -d:harfbuzzyStatic \
-            --passC:-Werror=incompatible-pointer-types \
+            --passC:-Werror=implicit-function-declaration \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \

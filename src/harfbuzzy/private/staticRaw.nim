@@ -1,8 +1,8 @@
-## Private HarfBuzz bindings for the bundled-static build.
+## Private HarfBuzz bindings for the Windows and C++ compatibility backend.
 ##
-## Normal builds use the upstream `harfbuzz` package. These declarations remain
-## private because that package currently assumes pkg-config-based system
-## linking, which is incompatible with harfbuzzy's self-contained static build.
+## Unix C builds use the upstream `harfbuzz` package for both shared and static
+## libraries. These declarations retain native C types and runtime DLL loading
+## for compiler modes that still need them.
 
 import std/os
 

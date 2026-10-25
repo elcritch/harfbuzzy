@@ -17,18 +17,18 @@ const
   harfbuzzBuildScript = harfbuzzCmakeDir / "build.cmake"
   # CMake caches absolute source paths and compiler choices. Keep independent
   # checkouts and configurations from reusing incompatible build directories.
-  buildKey =
-    $hash(
-      harfbuzzCmakeDir & "\n" & readFile(harfbuzzCmakeDir / "CMakeLists.txt") & "\n" &
-        readFile(harfbuzzBuildScript) & "\n" & harfbuzzyStaticCmake & "\n" &
-        harfbuzzyStaticCmakeArgs & "\n" & getEnv("CC") & "\n" & getEnv("CXX") & "\n" &
-        getEnv("CFLAGS") & "\n" & getEnv("CXXFLAGS") & "\n" & getEnv("LDFLAGS") & "\n" &
-        getEnv("CMAKE_GENERATOR") & "\n" & getEnv("CMAKE_GENERATOR_PLATFORM") & "\n" &
-        getEnv("CMAKE_GENERATOR_TOOLSET") & "\n" & getEnv("SDKROOT") & "\n" &
-        getEnv("MACOSX_DEPLOYMENT_TARGET")
-    )
+  buildKey = $hash(
+    harfbuzzCmakeDir & "\n" & readFile(harfbuzzCmakeDir / "CMakeLists.txt") & "\n" &
+      readFile(harfbuzzBuildScript) & "\n" & harfbuzzyStaticCmake & "\n" &
+      harfbuzzyStaticCmakeArgs & "\n" & getEnv("CC") & "\n" & getEnv("CXX") & "\n" &
+      getEnv("CFLAGS") & "\n" & getEnv("CXXFLAGS") & "\n" & getEnv("LDFLAGS") & "\n" &
+      getEnv("CMAKE_GENERATOR") & "\n" & getEnv("CMAKE_GENERATOR_PLATFORM") & "\n" &
+      getEnv("CMAKE_GENERATOR_TOOLSET") & "\n" & getEnv("SDKROOT") & "\n" &
+      getEnv("MACOSX_DEPLOYMENT_TARGET")
+  )
   harfbuzzBuildDir* = cacheDir / ("harfbuzz-" & harfbuzzVersion) / targetName / buildKey
   harfbuzzSourceDir* = harfbuzzBuildDir / "_deps" / "harfbuzz-src" / "src"
+  harfbuzzIncludeDir* = harfbuzzBuildDir / "include"
   harfbuzzLibDir = harfbuzzBuildDir / "lib"
   fribidiInstallDir* = harfbuzzBuildDir / "fribidi-install"
   fribidiIncludeDir* = fribidiInstallDir / "include" / "fribidi"

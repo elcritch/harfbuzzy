@@ -1,28 +1,36 @@
 ## Compatibility facade over the HarfBuzz C API used by harfbuzzy.
 ##
-## Unix C builds use the externally maintained `harfbuzz` package. Bundled-static,
-## C++, and Windows builds use a private compatibility backend until that package
-## supports their compiler and link modes.
+## Unix C builds use the externally maintained `harfbuzz` package, including
+## bundled-static builds. C++ and Windows builds retain a private compatibility
+## backend until that package supports their compiler modes.
 
 const hbStaticEnabled* = defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)
 
-when hbStaticEnabled or defined(windows) or defined(cpp):
-  # harfbuzz-nim currently discovers and links HarfBuzz through pkg-config.
-  # It also declares opaque types in a way that is incompatible with C++'s
-  # stricter type checking. Keep the existing compatibility backend for those
-  # link and compiler modes until the upstream package supports them.
+when defined(windows) or defined(cpp):
+  # Keep the compatibility backend for these compilers' native type requirements.
   import harfbuzzy/private/staticRaw
 
   export staticRaw
 else:
-  const hbPkgConfigIncludeDir = gorge("pkg-config --variable=includedir harfbuzz")
+  when hbStaticEnabled:
+    import std/os
+    import harfbuzzy/private/staticHarfbuzz
 
-  {.passC: "-I" & hbPkgConfigIncludeDir.}
-  {.passC: gorge("pkg-config --cflags harfbuzz").}
+    {.define: harfbuzzStatic.}
+    {.passC: "-I" & quoteShell(staticHarfbuzz.harfbuzzIncludeDir).}
+    {.passL: quoteShell(staticHarfbuzz.harfbuzzSubsetStaticLib).}
+    {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
+    {.passL: "-pthread -lm".}
+  else:
+    const hbPkgConfigIncludeDir = gorge("pkg-config --variable=includedir harfbuzz")
+
+    {.passC: "-I" & hbPkgConfigIncludeDir.}
+    {.passC: gorge("pkg-config --cflags harfbuzz").}
   # Upstream emits Nim struct pointers rather than importing the C typedefs.
   # Their layouts are ABI-checked in tests; GCC 14+ otherwise rejects the
   # generated calls (including function pointers) as incompatible pointer types.
   {.passC: "-Wno-incompatible-pointer-types".}
+  {.passC: "-Wno-incompatible-function-pointer-types".}
   when defined(vcc):
     {.passC: "/DHB_NO_SINGLE_HEADER_ERROR".}
   else:

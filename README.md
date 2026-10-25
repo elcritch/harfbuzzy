@@ -5,10 +5,10 @@ Idiomatic Nim wrappers for HarfBuzz, with the low-level C API supplied by
 
 The package has two layers:
 
-- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Normal
-  Unix builds re-export the relevant `harfbuzz-nim` modules; bundled-static
-  builds, C++ builds, and Windows retain a compatible private backend for their
-  custom compiler and link modes.
+- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Unix C
+  builds re-export the relevant `harfbuzz-nim` modules for shared and bundled
+  static libraries. C++ and Windows retain a compatible private backend for
+  their compiler modes.
 - `harfbuzzy`: camelCase, reference-counted Nim wrappers for blobs, faces,
   fonts, buffers, sets, shaping, and subsetting.
 
@@ -128,6 +128,9 @@ nim test
 `=copy`, `=dup`, and `=wasMoved` hooks, so callers do not call `hb_*_destroy`
 directly. The repository default is `--mm:atomicArc`.
 
+The dependency currently tracks the `feat/static-linking` branch in
+[`harfbuzz-nim` PR #1](https://github.com/nimbase/harfbuzz-nim/pull/1).
+
 On Linux and macOS, `harfbuzz-nim` discovers the system HarfBuzz headers and
 libraries with `pkg-config`. FriBidi remains dynamically loaded. On Windows,
 the compatibility backend dynamically loads HarfBuzz and FriBidi from the
@@ -156,7 +159,9 @@ nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
 ```
 
 This opt-in build uses Nim's C backend and requires CMake 3.24 or newer, Meson,
-Ninja, and a native C/C++ toolchain. Both release archives are pinned by version
+Ninja, and a native C/C++ toolchain. On Unix, Harfbuzzy enables the upstream
+`harfbuzzStatic` mode and supplies the bundled headers and archives, avoiding
+system HarfBuzz discovery and linking. Both release archives are pinned by version
 and SHA-256 hash. FriBidi
 uses its upstream Meson build to generate its Unicode tables and headers.
 Build files are cached under the
@@ -194,6 +199,6 @@ The static archives can also be linked into a shared library on Unix.
 ## Maintaining the Private Raw Backend
 
 `tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
-`tools/harfbuzz.c2nim`. The generated file is only a seed for the bundled-static
-and Windows compatibility backend, not the normal low-level layer. HarfBuzz
+`tools/harfbuzz.c2nim`. The generated file is only a seed for the Windows and
+C++ compatibility backend, not the normal low-level layer. HarfBuzz
 macros and enum domains still need manual curation.
