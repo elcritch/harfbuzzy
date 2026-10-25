@@ -129,12 +129,12 @@ The dependency currently tracks `fix/static-native-types` from
 [`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
 
 Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
-through `pkg-config`. Windows and C++ builds use upstream's lazy DLL loading.
-Enable the same mode elsewhere with `-d:harfbuzzRuntime`. FriBidi remains
-dynamically loaded.
+through `pkg-config`. Windows and C++ builds probe the runtime libraries
+at startup. To control loading explicitly on any platform, pass
+`-d:harfbuzzRuntime`. FriBidi remains dynamically loaded.
 
-In runtime mode, missing HarfBuzz libraries or symbols raise `HarfBuzzLoadError`.
-Load core explicitly before using it to handle failure and choose a fallback:
+In explicit runtime mode, call `loadHarfbuzz` before using the core APIs. A missing
+library raises `HarfBuzzLoadError`, so the application can choose a fallback:
 
 ```nim
 import harfbuzzy
@@ -146,9 +146,17 @@ except HarfBuzzLoadError:
   echo "Use the application's fallback"
 ```
 
-Set upstream's `-d:harfbuzzDynlib=...` and `-d:harfbuzzSubsetDynlib=...` to override
+Set `-d:harfbuzzDynlib=...` and `-d:harfbuzzSubsetDynlib=...` to override
 library discovery at build time. FriBidi keeps `-d:harfbuzzyFribidiDynlib=...`.
+Load `HarfBuzzLibrary.Subset` before using subsetting in explicit runtime mode.
+HarfBuzzy derives only the procedure pointers it uses from upstream declarations.
+Loading resolves them once; calls then go directly to C.
+Optional symbols unavailable in the loaded library version remain nil.
 Successful HarfBuzz loads remain valid for the process lifetime.
+`harfbuzzLibraryStem(library)` is public for custom path discovery; it returns
+`harfbuzz`, `harfbuzz-subset`, or `harfbuzz-icu` without platform prefixes or suffixes.
+Pass a full filename using `loadHarfbuzz(library, path = ...)` to choose a library
+at runtime. Raw C definitions remain in `harfbuzz-nim`.
 
 To download and statically link HarfBuzz 14.2.0 (including its subset library)
 and FriBidi 1.0.16, request the `static` Atlas feature in your manifest:

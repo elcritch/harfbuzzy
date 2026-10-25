@@ -89,6 +89,14 @@ jobs:
           nim test
           nim cpp -r --out:tests/harfbuzzy-dynamic-cpp tests/tharfbuzzy.nim
           nim c -r -d:harfbuzzRuntime tests/fixtures/optionalharfbuzz.nim
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            hbSharedFilename=libharfbuzz.dylib
+          else
+            hbSharedFilename=libharfbuzz.so
+          fi
+          export HARFBUZZ_TEST_CORE_PATH="$(pkg-config --variable=libdir harfbuzz)/$hbSharedFilename"
+          nim cpp -r -d:harfbuzzRuntime tests/truntime_loading.nim
+          nim c -r -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
           nim cpp -r -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/fixtures/optionalharfbuzz.nim
 
       - name: Run dynamic tests with MSVC
@@ -104,6 +112,12 @@ jobs:
           nim cpp -r @flags --out:tests/harfbuzzy-dynamic-cpp.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r @flags tests/fixtures/optionalharfbuzz.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:HARFBUZZ_TEST_CORE_PATH = $env:HARFBUZZY_HARFBUZZ_DLL
+          nim cpp -r @flags -d:harfbuzzRuntime tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim cpp -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/fixtures/optionalharfbuzz.nim

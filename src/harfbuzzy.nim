@@ -9,7 +9,7 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
 import harfbuzzy/[fribidi_raw, raw]
 
 when defined(harfbuzzRuntime):
-  export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz
+  export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz, harfbuzzLibraryStem
 
 type
   Blob* = object
@@ -38,14 +38,7 @@ type
 
 template destroyHandle(handle, destroyProc: untyped) =
   if handle != nil:
-    when defined(harfbuzzRuntime):
-      try:
-        destroyProc(handle)
-      except HarfBuzzLoadError as error:
-        # Destructors cannot propagate catchable exceptions during unwinding.
-        raise newException(Defect, "could not release HarfBuzz handle: " & error.msg)
-    else:
-      destroyProc(handle)
+    destroyProc(handle)
 
 template copyHandle(dest, src, referenceProc, destroyProc: untyped) =
   if dest == src:

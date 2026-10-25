@@ -5,6 +5,10 @@ import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
 from harfbuzz/hb_draw import nil
 
+when defined(harfbuzzRuntime):
+  loadHarfbuzz()
+  loadHarfbuzz(HarfBuzzLibrary.Subset)
+
 when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz
 
