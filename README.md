@@ -5,10 +5,7 @@ Idiomatic Nim wrappers for HarfBuzz, with the low-level C API supplied by
 
 The package has two layers:
 
-- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Bundled-static
-  builds re-export the upstream `harfbuzz-nim` modules on all supported compilers.
-  Unix C shared builds use them too; Windows/C++ dynamic builds retain a private
-  compatibility backend.
+- `harfbuzzy/raw`: re-exports the upstream HarfBuzz C API for every build.
 - `harfbuzzy`: camelCase, reference-counted Nim wrappers for blobs, faces,
   fonts, buffers, sets, shaping, and subsetting.
 
@@ -131,18 +128,27 @@ directly. The repository default is `--mm:atomicArc`.
 The dependency currently tracks `fix/static-native-types` from
 [`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
 
-For shared builds on Linux and macOS, `harfbuzz-nim` discovers the system
-HarfBuzz headers and libraries with `pkg-config`. C++ uses the compatibility
-backend, and FriBidi remains dynamically loaded. On Windows, the compatibility
-backend dynamically loads HarfBuzz and FriBidi from the normal DLL search path.
-Override the Windows DLL paths when needed:
+Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
+through `pkg-config`. Windows and C++ builds use upstream's lazy DLL loading.
+Enable the same mode elsewhere with `-d:harfbuzzRuntime`. FriBidi remains
+dynamically loaded.
 
-```sh
-nim c -r -d:harfbuzzyDynlib=C:/path/to/harfbuzz.dll \
-  -d:harfbuzzySubsetDynlib=C:/path/to/harfbuzz-subset.dll \
-  -d:harfbuzzyFribidiDynlib=C:/path/to/fribidi.dll \
-  tests/tharfbuzzy.nim
+In runtime mode, missing HarfBuzz libraries or symbols raise `HarfBuzzLoadError`.
+Load core explicitly before using it to handle failure and choose a fallback:
+
+```nim
+import harfbuzzy
+
+try:
+  loadHarfbuzz() # Or loadHarfbuzz(path = "/path/to/libharfbuzz")
+  echo versionString()
+except HarfBuzzLoadError:
+  echo "Use the application's fallback"
 ```
+
+Set upstream's `-d:harfbuzzDynlib=...` and `-d:harfbuzzSubsetDynlib=...` to override
+library discovery at build time. FriBidi keeps `-d:harfbuzzyFribidiDynlib=...`.
+Successful HarfBuzz loads remain valid for the process lifetime.
 
 To download and statically link HarfBuzz 14.2.0 (including its subset library)
 and FriBidi 1.0.16, request the `static` Atlas feature in your manifest:
@@ -196,10 +202,3 @@ change either library's license.
 Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
 matching vcpkg libraries. Static builds require MSVC on Windows.
 The static archives can also be linked into a shared library on Unix.
-
-## Maintaining the Private Raw Backend
-
-`tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
-`tools/harfbuzz.c2nim`. The generated file is only a seed for the Windows and
-C++ dynamic compatibility backend, not the normal low-level layer. HarfBuzz
-macros and enum domains still need manual curation.

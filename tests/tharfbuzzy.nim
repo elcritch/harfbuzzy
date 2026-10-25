@@ -3,6 +3,7 @@ import std/[os, sequtils, strutils, unittest]
 import harfbuzzy
 import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
+from harfbuzz/hb_draw import nil
 
 when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz
@@ -136,6 +137,57 @@ suite "harfbuzzy raw bindings":
     let cachedPlan = createCachedPlan(hb_face_get_empty(), addr props, nil, 0, nil)
     check cachedPlan != nil
     hb_shape_plan_destroy(cachedPlan)
+
+suite "upstream draw interoperability":
+  test "upstream callbacks accept handles from the raw backend":
+    type DrawData = object
+      moves: int
+      validState: bool
+      x, y: cfloat
+
+    proc moveTo(
+        funcs: ptr hb_draw.hb_draw_funcs_t,
+        data: pointer,
+        state: ptr hb_draw.hb_draw_state_t,
+        x, y: cfloat,
+        userData: pointer,
+    ) {.cdecl, raises: [].} =
+      let draw = cast[ptr DrawData](data)
+      inc draw.moves
+      draw.validState = funcs != nil and state != nil
+      draw.x = x
+      draw.y = y
+
+    let path = currentSourcePath().parentDir / "fixtures" / "outlines" / "quadratic.ttf"
+    let blob = hb_blob_create_from_file_or_fail(path.cstring)
+    require blob != nil
+    defer:
+      hb_blob_destroy(blob)
+    let face = hb_face_create(blob, 0)
+    require face != nil
+    defer:
+      hb_face_destroy(face)
+    let font = hb_font_create(face)
+    require font != nil
+    defer:
+      hb_font_destroy(font)
+    hb_ot_font_set_funcs(font)
+    hb_font_set_scale(font, 1000, 1000)
+    var glyph: hb_codepoint_t
+    require hb_font_get_nominal_glyph(font, 65, addr glyph) != 0
+
+    let funcs = hb_draw_funcs_create()
+    require funcs != nil
+    defer:
+      hb_draw_funcs_destroy(funcs)
+    let callback: hb_draw.hb_draw_move_to_func_t = moveTo
+    hb_draw_funcs_set_move_to_func(funcs, callback, nil, nil)
+    var data: DrawData
+    hb_font_draw_glyph(font, glyph, funcs, addr data)
+    check data.moves == 1
+    check data.validState
+    check data.x == 100
+    check data.y == 0
 
 suite "harfbuzzy wrapper":
   test "tags, scripts, languages, directions, and features":

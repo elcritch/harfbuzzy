@@ -8,6 +8,9 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
 
 import harfbuzzy/[fribidi_raw, raw]
 
+when defined(harfbuzzRuntime):
+  export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz
+
 type
   Blob* = object
     handle: ptr hb_blob_t
@@ -35,7 +38,14 @@ type
 
 template destroyHandle(handle, destroyProc: untyped) =
   if handle != nil:
-    destroyProc(handle)
+    when defined(harfbuzzRuntime):
+      try:
+        destroyProc(handle)
+      except HarfBuzzLoadError as error:
+        # Destructors cannot propagate catchable exceptions during unwinding.
+        raise newException(Defect, "could not release HarfBuzz handle: " & error.msg)
+    else:
+      destroyProc(handle)
 
 template copyHandle(dest, src, referenceProc, destroyProc: untyped) =
   if dest == src:
@@ -763,7 +773,7 @@ func isEmojiCodepoint(codepoint: Codepoint): bool =
 func shouldSetScript(script: Script): bool =
   script.toRaw != HB_SCRIPT_INVALID and script.toRaw != HB_SCRIPT_UNKNOWN
 
-func scriptFor*(codepoint: Codepoint): Script =
+proc scriptFor*(codepoint: Codepoint): Script =
   if codepoint.isEmojiCodepoint:
     return scriptEmoji
   hb_unicode_script(hb_unicode_funcs_get_default(), hb_codepoint_t(codepoint)).toScript
@@ -772,7 +782,7 @@ func scriptIsNeutral(script: Script): bool =
   let value = script.toRaw
   value in [HB_SCRIPT_INVALID, HB_SCRIPT_UNKNOWN, HB_SCRIPT_COMMON, HB_SCRIPT_INHERITED]
 
-func inferScript(text: openArray[Codepoint], first, last: int): Script =
+proc inferScript(text: openArray[Codepoint], first, last: int): Script =
   for index in first ..< last:
     let script = scriptFor(text[index])
     if script.toRaw != HB_SCRIPT_UNKNOWN:
@@ -1755,7 +1765,7 @@ proc missingGlyphIndices*(run: ShapedRun): seq[int] =
 proc hasMissingGlyphs*(run: ShapedRun): bool =
   run.glyphRun.hasMissingGlyphs
 
-func codepointNeedsGlyph(codepoint: Codepoint): bool =
+proc codepointNeedsGlyph(codepoint: Codepoint): bool =
   not (
     codepoint == 0x0009'u32 or codepoint == 0x000A'u32 or codepoint == 0x000D'u32 or
     codepoint == 0x0020'u32 or codepoint == 0x200C'u32 or codepoint == 0x200D'u32 or
