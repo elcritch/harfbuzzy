@@ -176,7 +176,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          nim c -r --passC:-Werror=incompatible-pointer-types \
+          nim c -r --passC:-Werror=implicit-function-declaration \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
