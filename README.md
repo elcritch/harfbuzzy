@@ -128,8 +128,8 @@ nim test
 `=copy`, `=dup`, and `=wasMoved` hooks, so callers do not call `hb_*_destroy`
 directly. The repository default is `--mm:atomicArc`.
 
-The dependency currently tracks the `feat/static-linking` branch in
-[`harfbuzz-nim` PR #1](https://github.com/nimbase/harfbuzz-nim/pull/1).
+The dependency currently tracks `fix/static-native-types` from
+[`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
 
 On Linux and macOS, `harfbuzz-nim` discovers the system HarfBuzz headers and
 libraries with `pkg-config`. FriBidi remains dynamically loaded. On Windows,
