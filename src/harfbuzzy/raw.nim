@@ -19,7 +19,10 @@ else:
 
   {.passC: "-I" & hbPkgConfigIncludeDir.}
   {.passC: gorge("pkg-config --cflags harfbuzz").}
-  {.passC: "-Wno-incompatible-function-pointer-types".}
+  # Upstream emits Nim struct pointers rather than importing the C typedefs.
+  # Their layouts are ABI-checked in tests; GCC 14+ otherwise rejects the
+  # generated calls (including function pointers) as incompatible pointer types.
+  {.passC: "-Wno-incompatible-pointer-types".}
   when defined(vcc):
     {.passC: "/DHB_NO_SINGLE_HEADER_ERROR".}
   else:
