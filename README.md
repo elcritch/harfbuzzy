@@ -84,6 +84,31 @@ uses ordered fallback typefaces for maximal covered segments.
 `ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
 to glyph-range helpers for editor and layout integrations.
 
+## Glyph outlines
+
+HarfBuzzy 0.5.0 adds `font.glyphOutline(glyphId)` for renderers that need vector
+contours. It returns owned `OutlineCommand` values for moves, lines, quadratic
+and cubic curves, and closed contours. No rendering library is required.
+
+```nim
+let glyphId = typeface.font.nominalGlyph(uint32('A'))
+for command in typeface.font.glyphOutline(glyphId):
+  case command.kind
+  of OutlineCommandKind.moveTo, OutlineCommandKind.lineTo:
+    echo command.kind, " ", command.to.x, ", ", command.to.y
+  of OutlineCommandKind.quadraticTo:
+    echo command.control1, " -> ", command.to
+  of OutlineCommandKind.cubicTo:
+    echo command.control1, " ", command.control2, " -> ", command.to
+  of OutlineCommandKind.closePath:
+    echo "close contour"
+```
+
+Coordinates follow the font's current scale and variations, with Y increasing
+upwards. `initTypeface` defaults to units per em. An outline-less glyph such as
+a space returns an empty sequence; glyph zero selects `.notdef`. Outlines
+require HarfBuzz 7.0 or newer, and remain valid after the font is released.
+
 ## Build
 
 Install dependencies with Atlas:

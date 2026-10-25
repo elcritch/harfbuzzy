@@ -451,3 +451,80 @@ suite "harfbuzzy wrapper":
     let subsetFace = subset(face, input)
     check subsetFace.upem == face.upem
     check subsetFace.glyphCount > 0
+
+const outlineFixtureDir = currentSourcePath().parentDir / "fixtures" / "outlines"
+
+proc outlineFixtureFont(name: string): Font =
+  initTypeface(initFace(initBlob(readFile(outlineFixtureDir / name)))).font
+
+suite "glyph outlines":
+  test "TrueType outlines retain quadratic control points and closed contours":
+    let font = outlineFixtureFont("quadratic.ttf")
+    let commands = font.glyphOutline(font.nominalGlyph(65))
+    check commands.len > 3
+    check commands[0].kind == OutlineCommandKind.moveTo
+    check commands[0].to == OutlinePoint(x: 100, y: 0)
+    check commands[1].kind == OutlineCommandKind.lineTo
+    check commands[1].to == OutlinePoint(x: 500, y: 0)
+    check commands[2].kind == OutlineCommandKind.quadraticTo
+    check commands[2].control1 == OutlinePoint(x: 500, y: 600)
+    check commands[2].to == OutlinePoint(x: 100, y: 600)
+    check commands[^1].kind == OutlineCommandKind.closePath
+
+  test "CFF outlines retain both cubic control points":
+    let font = outlineFixtureFont("cubic.otf")
+    let commands = font.glyphOutline(font.nominalGlyph(65))
+    check commands.len > 3
+    check commands[0].to == OutlinePoint(x: 100, y: 0)
+    check commands[2].kind == OutlineCommandKind.cubicTo
+    check commands[2].control1 == OutlinePoint(x: 600, y: 100)
+    check commands[2].control2 == OutlinePoint(x: 600, y: 500)
+    check commands[2].to == OutlinePoint(x: 100, y: 600)
+    check commands[^1].kind == OutlineCommandKind.closePath
+
+  test "outline coordinates follow the font scale without flipping Y":
+    var font = outlineFixtureFont("quadratic.ttf")
+    let glyph = font.nominalGlyph(65)
+    let original = font.glyphOutline(glyph)
+    font.setScale(2000, 3000)
+    let scaled = font.glyphOutline(glyph)
+    check scaled.len == original.len
+    for index, command in scaled:
+      check command.kind == original[index].kind
+      check command.to.x == original[index].to.x * 2
+      check command.to.y == original[index].to.y * 3
+      check command.control1.x == original[index].control1.x * 2
+      check command.control1.y == original[index].control1.y * 3
+      check command.control2.x == original[index].control2.x * 2
+      check command.control2.y == original[index].control2.y * 3
+
+  test "outlines follow variable font coordinates":
+    var font = outlineFixtureFont("variable.ttf")
+    let glyph = font.nominalGlyph(65)
+    let regular = font.glyphOutline(glyph)
+    font.setVariations([initVariation(toTag("wght"), 900)])
+    let heavy = font.glyphOutline(glyph)
+    check regular[1].to.x == 500
+    check heavy[1].to.x == 600
+    check heavy[2].control1.x == 600
+    check heavy[2].to == regular[2].to
+
+  test "empty outlines and the notdef glyph have distinct results":
+    let font = outlineFixtureFont("quadratic.ttf")
+    check font.glyphOutline(font.nominalGlyph(32)).len == 0
+    check font.glyphOutline(0).len > 0
+
+  test "commands outlive the font and successive calls own separate storage":
+    var first = block:
+      let font = outlineFixtureFont("quadratic.ttf")
+      font.glyphOutline(font.nominalGlyph(65))
+    let second = block:
+      let font = outlineFixtureFont("quadratic.ttf")
+      font.glyphOutline(font.nominalGlyph(65))
+    check first == second
+    first[0].to.x = -1
+    check second[0].to.x == 100
+
+  test "uninitialized fonts raise ValueError":
+    expect ValueError:
+      discard Font().glyphOutline(0)

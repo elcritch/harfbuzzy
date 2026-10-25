@@ -1,4 +1,4 @@
-version       = "0.4.0"
+version       = "0.5.0"
 author        = "elcritch"
 description   = "Nim bindings and wrappers for HarfBuzz."
 license       = "MIT"

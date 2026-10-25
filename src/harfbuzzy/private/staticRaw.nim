@@ -252,6 +252,38 @@ type
   hb_font_funcs_t* {.importc: "hb_font_funcs_t", header: hbHeader, incompleteStruct.} = object
   hb_buffer_t* {.importc: "hb_buffer_t", header: hbHeader, incompleteStruct.} = object
 
+  hb_draw_funcs_t* {.importc: "hb_draw_funcs_t", header: hbHeader, incompleteStruct.} = object
+  hb_draw_state_t* {.importc: "hb_draw_state_t", header: hbHeader, incompleteStruct.} = object
+
+  hb_draw_move_to_func_t* = proc(
+    funcs: ptr hb_draw_funcs_t,
+    drawData: pointer,
+    state: ptr hb_draw_state_t,
+    toX, toY: cfloat,
+    userData: pointer,
+  ) {.cdecl.}
+  hb_draw_line_to_func_t* = hb_draw_move_to_func_t
+  hb_draw_quadratic_to_func_t* = proc(
+    funcs: ptr hb_draw_funcs_t,
+    drawData: pointer,
+    state: ptr hb_draw_state_t,
+    controlX, controlY, toX, toY: cfloat,
+    userData: pointer,
+  ) {.cdecl.}
+  hb_draw_cubic_to_func_t* = proc(
+    funcs: ptr hb_draw_funcs_t,
+    drawData: pointer,
+    state: ptr hb_draw_state_t,
+    control1X, control1Y, control2X, control2Y, toX, toY: cfloat,
+    userData: pointer,
+  ) {.cdecl.}
+  hb_draw_close_path_func_t* = proc(
+    funcs: ptr hb_draw_funcs_t,
+    drawData: pointer,
+    state: ptr hb_draw_state_t,
+    userData: pointer,
+  ) {.cdecl.}
+
   hb_shape_plan_t* {.importc: "hb_shape_plan_t", header: hbHeader, incompleteStruct.} = object
   hb_set_t* {.importc: "hb_set_t", header: hbHeader, incompleteStruct.} = object
   hb_map_t* {.importc: "hb_map_t", header: hbHeader, incompleteStruct.} = object
@@ -1043,3 +1075,57 @@ proc hb_subset_plan_destroy*(
 proc hb_subset_plan_execute_or_fail*(
   plan: ptr hb_subset_plan_t
 ): ptr hb_face_t {.cdecl, importc: "hb_subset_plan_execute_or_fail", hbSubsetDynlib.}
+
+proc hb_draw_funcs_create*(): ptr hb_draw_funcs_t {.
+  cdecl, importc: "hb_draw_funcs_create", hbDynlib
+.}
+
+proc hb_draw_funcs_destroy*(
+  funcs: ptr hb_draw_funcs_t
+) {.cdecl, importc: "hb_draw_funcs_destroy", hbDynlib.}
+
+proc hb_draw_funcs_make_immutable*(
+  funcs: ptr hb_draw_funcs_t
+) {.cdecl, importc: "hb_draw_funcs_make_immutable", hbDynlib.}
+
+proc hb_draw_funcs_set_move_to_func*(
+  funcs: ptr hb_draw_funcs_t,
+  callback: hb_draw_move_to_func_t,
+  userData: pointer,
+  destroy: hb_destroy_func_t,
+) {.cdecl, importc: "hb_draw_funcs_set_move_to_func", hbDynlib.}
+
+proc hb_draw_funcs_set_line_to_func*(
+  funcs: ptr hb_draw_funcs_t,
+  callback: hb_draw_line_to_func_t,
+  userData: pointer,
+  destroy: hb_destroy_func_t,
+) {.cdecl, importc: "hb_draw_funcs_set_line_to_func", hbDynlib.}
+
+proc hb_draw_funcs_set_quadratic_to_func*(
+  funcs: ptr hb_draw_funcs_t,
+  callback: hb_draw_quadratic_to_func_t,
+  userData: pointer,
+  destroy: hb_destroy_func_t,
+) {.cdecl, importc: "hb_draw_funcs_set_quadratic_to_func", hbDynlib.}
+
+proc hb_draw_funcs_set_cubic_to_func*(
+  funcs: ptr hb_draw_funcs_t,
+  callback: hb_draw_cubic_to_func_t,
+  userData: pointer,
+  destroy: hb_destroy_func_t,
+) {.cdecl, importc: "hb_draw_funcs_set_cubic_to_func", hbDynlib.}
+
+proc hb_draw_funcs_set_close_path_func*(
+  funcs: ptr hb_draw_funcs_t,
+  callback: hb_draw_close_path_func_t,
+  userData: pointer,
+  destroy: hb_destroy_func_t,
+) {.cdecl, importc: "hb_draw_funcs_set_close_path_func", hbDynlib.}
+
+proc hb_font_draw_glyph*(
+  font: ptr hb_font_t,
+  glyph: hb_codepoint_t,
+  funcs: ptr hb_draw_funcs_t,
+  drawData: pointer,
+) {.cdecl, importc: "hb_font_draw_glyph", hbDynlib.}
