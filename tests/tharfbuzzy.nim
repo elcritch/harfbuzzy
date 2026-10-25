@@ -51,7 +51,7 @@ const
   arabicText = "\u0633\u0644\u0627\u0645"
 
 static:
-  when hbStaticEnabled and not (defined(windows) or defined(cpp)):
+  when hbStaticEnabled:
     doAssert defined(harfbuzzStatic)
     doAssert not declared(hbLib)
   doAssert sizeof(hb_var_int_t) == 4

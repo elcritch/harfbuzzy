@@ -109,12 +109,18 @@ jobs:
         shell: bash
         run: |
           nim c -r -d:harfbuzzyStatic \
-            --passC:-Werror=implicit-function-declaration \
+            --passC:-Werror=incompatible-pointer-types \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzyDynlib=harfbuzzy-missing-core \
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
             --out:tests/harfbuzzy-static tests/tharfbuzzy.nim
+          nim cpp -r -d:harfbuzzyStatic \
+            "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
+            --out:tests/harfbuzzy-static-cpp tests/tharfbuzzy.nim
           nim c --app:lib --noMain -d:harfbuzzyStatic \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             tests/fixtures/staticlib.nim
@@ -135,6 +141,14 @@ jobs:
             -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
             --out:tests/harfbuzzy-static.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim cpp -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzyStatic `
+            "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
+            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
+            --out:tests/harfbuzzy-static-cpp.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             --passC:/we4013 -d:harfbuzzyStatic `

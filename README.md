@@ -5,10 +5,10 @@ Idiomatic Nim wrappers for HarfBuzz, with the low-level C API supplied by
 
 The package has two layers:
 
-- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Unix C
-  builds re-export the relevant `harfbuzz-nim` modules for shared and bundled
-  static libraries. C++ and Windows retain a compatible private backend for
-  their compiler modes.
+- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Bundled-static
+  builds re-export the upstream `harfbuzz-nim` modules on all supported compilers.
+  Unix C shared builds use them too; Windows/C++ dynamic builds retain a private
+  compatibility backend.
 - `harfbuzzy`: camelCase, reference-counted Nim wrappers for blobs, faces,
   fonts, buffers, sets, shaping, and subsetting.
 
@@ -131,10 +131,11 @@ directly. The repository default is `--mm:atomicArc`.
 The dependency currently tracks `fix/static-native-types` from
 [`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
 
-On Linux and macOS, `harfbuzz-nim` discovers the system HarfBuzz headers and
-libraries with `pkg-config`. FriBidi remains dynamically loaded. On Windows,
-the compatibility backend dynamically loads HarfBuzz and FriBidi from the
-normal DLL search path. Override the Windows DLL paths when needed:
+For shared builds on Linux and macOS, `harfbuzz-nim` discovers the system
+HarfBuzz headers and libraries with `pkg-config`. C++ uses the compatibility
+backend, and FriBidi remains dynamically loaded. On Windows, the compatibility
+backend dynamically loads HarfBuzz and FriBidi from the normal DLL search path.
+Override the Windows DLL paths when needed:
 
 ```sh
 nim c -r -d:harfbuzzyDynlib=C:/path/to/harfbuzz.dll \
@@ -158,8 +159,8 @@ build path with `-d:harfbuzzyStatic`:
 nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
 ```
 
-This opt-in build uses Nim's C backend and requires CMake 3.24 or newer, Meson,
-Ninja, and a native C/C++ toolchain. On Unix, Harfbuzzy enables the upstream
+This opt-in build supports Nim's C and C++ backends and requires CMake 3.24 or newer, Meson,
+Ninja, and a native C/C++ toolchain. Harfbuzzy enables the upstream
 `harfbuzzStatic` mode and supplies the bundled headers and archives, avoiding
 system HarfBuzz discovery and linking. Both release archives are pinned by version
 and SHA-256 hash. FriBidi
@@ -200,5 +201,5 @@ The static archives can also be linked into a shared library on Unix.
 
 `tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
 `tools/harfbuzz.c2nim`. The generated file is only a seed for the Windows and
-C++ compatibility backend, not the normal low-level layer. HarfBuzz
+C++ dynamic compatibility backend, not the normal low-level layer. HarfBuzz
 macros and enum domains still need manual curation.

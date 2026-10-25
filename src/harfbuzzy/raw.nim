@@ -1,12 +1,12 @@
 ## Compatibility facade over the HarfBuzz C API used by harfbuzzy.
 ##
-## Unix C builds use the externally maintained `harfbuzz` package, including
-## bundled-static builds. C++ and Windows builds retain a private compatibility
-## backend until that package supports their compiler modes.
+## Bundled-static builds use the externally maintained `harfbuzz` package on
+## every supported compiler. Dynamic Windows and C++ builds retain a private
+## compatibility backend.
 
 const hbStaticEnabled* = defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)
 
-when defined(windows) or defined(cpp):
+when not hbStaticEnabled and (defined(windows) or defined(cpp)):
   # Keep the compatibility backend for these compilers' native type requirements.
   import harfbuzzy/private/staticRaw
 
@@ -17,20 +17,24 @@ else:
     import harfbuzzy/private/staticHarfbuzz
 
     {.define: harfbuzzStatic.}
-    {.passC: "-I" & quoteShell(staticHarfbuzz.harfbuzzIncludeDir).}
+    when defined(vcc):
+      {.passC: "/I" & quoteShell(staticHarfbuzz.harfbuzzIncludeDir).}
+    else:
+      {.passC: "-I" & quoteShell(staticHarfbuzz.harfbuzzIncludeDir).}
     {.passL: quoteShell(staticHarfbuzz.harfbuzzSubsetStaticLib).}
     {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
-    {.passL: "-pthread -lm".}
+    when defined(posix):
+      {.passL: "-pthread -lm".}
   else:
     const hbPkgConfigIncludeDir = gorge("pkg-config --variable=includedir harfbuzz")
 
     {.passC: "-I" & hbPkgConfigIncludeDir.}
     {.passC: gorge("pkg-config --cflags harfbuzz").}
-  # Upstream emits Nim struct pointers rather than importing the C typedefs.
-  # Their layouts are ABI-checked in tests; GCC 14+ otherwise rejects the
-  # generated calls (including function pointers) as incompatible pointer types.
-  {.passC: "-Wno-incompatible-pointer-types".}
-  {.passC: "-Wno-incompatible-function-pointer-types".}
+  when not hbStaticEnabled:
+    # Upstream dynamic bindings use nominal Nim structs; static bindings import
+    # the native C types. Dynamic struct layouts are ABI-checked in tests.
+    {.passC: "-Wno-incompatible-pointer-types".}
+    {.passC: "-Wno-incompatible-function-pointer-types".}
   when defined(vcc):
     {.passC: "/DHB_NO_SINGLE_HEADER_ERROR".}
   else:

@@ -153,7 +153,8 @@ type
   Position* = hb_position_t
 
   Tag* = distinct hb_tag_t
-  Script* = distinct hb_script_t
+  # Keep Nim move/reset operations independent of the native C enum type.
+  Script* = distinct uint32
   Language* = distinct hb_language_t
 
   Direction* {.pure.} = enum

@@ -1,21 +1,13 @@
-## Private HarfBuzz bindings for the Windows and C++ compatibility backend.
+## Private dynamic HarfBuzz bindings for Windows and C++ builds.
 ##
-## Unix C builds use the upstream `harfbuzz` package for both shared and static
-## libraries. These declarations retain native C types and runtime DLL loading
-## for compiler modes that still need them.
+## All bundled-static builds use the upstream `harfbuzz` package. These
+## declarations retain runtime DLL loading for dynamic compiler modes that
+## still need the compatibility backend.
 
 import std/os
 
-const hbStaticEnabled = defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)
-
-when hbStaticEnabled:
-  import harfbuzzy/private/staticHarfbuzz
-
 const hbSourceDir =
-  when hbStaticEnabled:
-    staticHarfbuzz.harfbuzzSourceDir
-  else:
-    currentSourcePath().parentDir().parentDir().parentDir() / "deps" / "harfbuzz" / "src"
+  currentSourcePath().parentDir().parentDir().parentDir() / "deps" / "harfbuzz" / "src"
 
 when dirExists(hbSourceDir):
   const hbIncludeFlag =
@@ -31,20 +23,9 @@ else:
   when hbPkgConfigCflags.len > 0:
     {.passC: hbPkgConfigCflags.}
 
-when hbStaticEnabled:
-  {.passL: quoteShell(staticHarfbuzz.harfbuzzSubsetStaticLib).}
-  {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
-  when defined(posix):
-    # Static archive dependencies must follow the archives on ELF linkers.
-    {.passL: "-pthread -lm".}
-
 const
   hbHeader = "hb.h"
   hbSubsetHeader = "hb-subset.h"
-
-when hbStaticEnabled:
-  const hbAatHeader = "hb-aat.h"
-  const hbOtHeader = "hb-ot.h"
 
 const hbDynlibOverride* {.strdefine: "harfbuzzyDynlib".} = ""
 
@@ -81,75 +62,20 @@ const hbSubsetLib* =
   else:
     "libharfbuzz-subset.so(|.0)"
 
-when hbStaticEnabled:
-  {.pragma: hbDynlib, header: hbHeader.}
-  {.pragma: hbAatDynlib, header: hbAatHeader.}
-  {.pragma: hbOtDynlib, header: hbOtHeader.}
-  {.pragma: hbSubsetDynlib, header: hbSubsetHeader.}
-  # Header-based calls require native C struct types. The dynlib path retains
-  # its Nim-defined value types for compatibility with C++ callers.
-  {.pragma: hbVarIntType, importc: "hb_var_int_t", header: hbHeader, completeStruct.}
-  {.pragma: hbVarNumType, importc: "hb_var_num_t", header: hbHeader, completeStruct.}
-  {.pragma: hbFeatureType, importc: "hb_feature_t", header: hbHeader, completeStruct.}
-  {.
-    pragma: hbVariationType, importc: "hb_variation_t", header: hbHeader, completeStruct
-  .}
-  {.
-    pragma: hbGlyphExtentsType,
-    importc: "hb_glyph_extents_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  {.
-    pragma: hbFontExtentsType,
-    importc: "hb_font_extents_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  {.
-    pragma: hbGlyphInfoType,
-    importc: "hb_glyph_info_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  {.
-    pragma: hbGlyphPositionType,
-    importc: "hb_glyph_position_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  {.
-    pragma: hbSegmentPropertiesType,
-    importc: "hb_segment_properties_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  {.
-    pragma: hbUserDataKeyType,
-    importc: "hb_user_data_key_t",
-    header: hbHeader,
-    completeStruct
-  .}
-  const hbArrayPrefix = "harfbuzzy_"
-  const hbArrayHeader = currentSourcePath().parentDir() / "staticArrays.h"
-  {.pragma: hbArrayDynlib, header: hbArrayHeader.}
-else:
-  {.pragma: hbDynlib, dynlib: hbLib.}
-  {.pragma: hbAatDynlib, dynlib: hbLib.}
-  {.pragma: hbOtDynlib, dynlib: hbLib.}
-  {.pragma: hbSubsetDynlib, dynlib: hbSubsetLib.}
-  {.pragma: hbVarIntType.}
-  {.pragma: hbVarNumType.}
-  {.pragma: hbFeatureType.}
-  {.pragma: hbVariationType.}
-  {.pragma: hbGlyphExtentsType.}
-  {.pragma: hbFontExtentsType.}
-  {.pragma: hbGlyphInfoType.}
-  {.pragma: hbGlyphPositionType.}
-  {.pragma: hbSegmentPropertiesType.}
-  {.pragma: hbUserDataKeyType.}
-  const hbArrayPrefix = ""
-  {.pragma: hbArrayDynlib, dynlib: hbLib.}
+{.pragma: hbDynlib, dynlib: hbLib.}
+{.pragma: hbAatDynlib, dynlib: hbLib.}
+{.pragma: hbOtDynlib, dynlib: hbLib.}
+{.pragma: hbSubsetDynlib, dynlib: hbSubsetLib.}
+{.pragma: hbVarIntType.}
+{.pragma: hbVarNumType.}
+{.pragma: hbFeatureType.}
+{.pragma: hbVariationType.}
+{.pragma: hbGlyphExtentsType.}
+{.pragma: hbFontExtentsType.}
+{.pragma: hbGlyphInfoType.}
+{.pragma: hbGlyphPositionType.}
+{.pragma: hbSegmentPropertiesType.}
+{.pragma: hbUserDataKeyType.}
 
 type
   hb_bool_t* = cint
@@ -886,7 +812,7 @@ proc hb_buffer_serialize_format_to_string*(
 ): cstring {.cdecl, importc: "hb_buffer_serialize_format_to_string", hbDynlib.}
 
 proc hb_buffer_serialize_list_formats*(): ptr cstring {.
-  cdecl, importc: (hbArrayPrefix & "hb_buffer_serialize_list_formats"), hbArrayDynlib
+  cdecl, importc: "hb_buffer_serialize_list_formats", hbDynlib
 .}
 
 proc hb_buffer_serialize_glyphs*(
@@ -913,10 +839,10 @@ proc hb_shape_full*(
   features: ptr hb_feature_t,
   numFeatures: cuint,
   shaperList: ptr cstring,
-): hb_bool_t {.cdecl, importc: (hbArrayPrefix & "hb_shape_full"), hbArrayDynlib.}
+): hb_bool_t {.cdecl, importc: "hb_shape_full", hbDynlib.}
 
 proc hb_shape_list_shapers*(): ptr cstring {.
-  cdecl, importc: (hbArrayPrefix & "hb_shape_list_shapers"), hbArrayDynlib
+  cdecl, importc: "hb_shape_list_shapers", hbDynlib
 .}
 
 proc hb_shape_plan_create*(
@@ -925,9 +851,7 @@ proc hb_shape_plan_create*(
   userFeatures: ptr hb_feature_t,
   numUserFeatures: cuint,
   shaperList: ptr cstring,
-): ptr hb_shape_plan_t {.
-  cdecl, importc: (hbArrayPrefix & "hb_shape_plan_create"), hbArrayDynlib
-.}
+): ptr hb_shape_plan_t {.cdecl, importc: "hb_shape_plan_create", hbDynlib.}
 
 proc hb_shape_plan_create_cached*(
   face: ptr hb_face_t,
@@ -935,9 +859,7 @@ proc hb_shape_plan_create_cached*(
   userFeatures: ptr hb_feature_t,
   numUserFeatures: cuint,
   shaperList: ptr cstring,
-): ptr hb_shape_plan_t {.
-  cdecl, importc: (hbArrayPrefix & "hb_shape_plan_create_cached"), hbArrayDynlib
-.}
+): ptr hb_shape_plan_t {.cdecl, importc: "hb_shape_plan_create_cached", hbDynlib.}
 
 proc hb_shape_plan_reference*(
   shapePlan: ptr hb_shape_plan_t
