@@ -2,6 +2,9 @@ import std/os
 
 import harfbuzzy
 
+when defined(harfbuzzRuntime):
+  loadHarfbuzz()
+
 proc findFont(paths: openArray[string]): string =
   for path in paths:
     if fileExists(path):

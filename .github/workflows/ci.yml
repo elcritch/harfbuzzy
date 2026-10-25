@@ -88,18 +88,39 @@ jobs:
         run: |
           nim test
           nim cpp -r --out:tests/harfbuzzy-dynamic-cpp tests/tharfbuzzy.nim
+          nim c -r -d:harfbuzzRuntime tests/fixtures/optionalharfbuzz.nim
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            hbSharedFilename=libharfbuzz.dylib
+          else
+            hbSharedFilename=libharfbuzz.so
+          fi
+          export HARFBUZZ_TEST_CORE_PATH="$(pkg-config --variable=libdir harfbuzz)/$hbSharedFilename"
+          nim cpp -r -d:harfbuzzRuntime tests/truntime_loading.nim
+          nim c -r -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
+          nim cpp -r -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/fixtures/optionalharfbuzz.nim
 
       - name: Run dynamic tests with MSVC
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $flags = @('--cc:vcc', '--vcc.exe:cl.exe', '--vcc.linkerexe:cl.exe', '--passC:/MT',
-            "-d:harfbuzzyDynlib=$env:HARFBUZZY_HARFBUZZ_DLL",
-            "-d:harfbuzzySubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
+            "-d:harfbuzzDynlib=$env:HARFBUZZY_HARFBUZZ_DLL",
+            "-d:harfbuzzSubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
             "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL")
           nim c -r @flags tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim cpp -r @flags --out:tests/harfbuzzy-dynamic-cpp.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r @flags tests/fixtures/optionalharfbuzz.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:HARFBUZZ_TEST_CORE_PATH = $env:HARFBUZZY_HARFBUZZ_DLL
+          nim cpp -r @flags -d:harfbuzzRuntime tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim cpp -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/fixtures/optionalharfbuzz.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c @flags examples/shape_paragraph.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -111,17 +132,23 @@ jobs:
           nim c -r -d:harfbuzzyStatic \
             --passC:-Werror=incompatible-pointer-types \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
-            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset \
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
             --out:tests/harfbuzzy-static tests/tharfbuzzy.nim
+          nim cpp -r -d:harfbuzzyStatic \
+            "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
+            -d:harfbuzzDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
+            --out:tests/harfbuzzy-static-cpp tests/tharfbuzzy.nim
           nim c --app:lib --noMain -d:harfbuzzyStatic \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             tests/fixtures/staticlib.nim
           nim c -r -d:harfbuzzyStatic \
             --passC:-Werror=implicit-function-declaration \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzDynlib=harfbuzzy-missing-core \
             --out:tests/harfbuzzy-static-font tests/fixtures/staticfont.nim
 
       - name: Test bundled static text libraries with MSVC
@@ -131,15 +158,23 @@ jobs:
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             -d:harfbuzzyStatic `
             "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
-            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
+            -d:harfbuzzDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset `
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
             --out:tests/harfbuzzy-static.exe tests/tharfbuzzy.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim cpp -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzyStatic `
+            "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
+            -d:harfbuzzDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset `
+            -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
+            --out:tests/harfbuzzy-static-cpp.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             --passC:/we4013 -d:harfbuzzyStatic `
             "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzDynlib=harfbuzzy-missing-core `
             --out:tests/harfbuzzy-static-font.exe tests/fixtures/staticfont.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -176,10 +211,10 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          nim c -r --passC:-Werror=incompatible-pointer-types \
+          nim c -r --passC:-Werror=implicit-function-declaration \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core \
-            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset \
+            -d:harfbuzzDynlib=harfbuzzy-missing-core \
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset \
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi \
             --out:tests/harfbuzzy-static-feature tests/tharfbuzzy.nim
 
@@ -189,8 +224,8 @@ jobs:
         run: |
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             "-d:harfbuzzyStaticCache=$env:GITHUB_WORKSPACE/deps/harfbuzz-static" `
-            -d:harfbuzzyDynlib=harfbuzzy-missing-core `
-            -d:harfbuzzySubsetDynlib=harfbuzzy-missing-subset `
+            -d:harfbuzzDynlib=harfbuzzy-missing-core `
+            -d:harfbuzzSubsetDynlib=harfbuzzy-missing-subset `
             -d:harfbuzzyFribidiDynlib=harfbuzzy-missing-fribidi `
             --out:tests/harfbuzzy-static-feature.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -256,8 +291,8 @@ jobs:
         run: |
           $flags = @('--cc:gcc', "--gcc.path=$env:HARFBUZZY_MINGW_BIN",
             "--passC:-I`"$env:VCPKG_ROOT/include/harfbuzz`"",
-            "-d:harfbuzzyDynlib=$env:HARFBUZZY_HARFBUZZ_DLL",
-            "-d:harfbuzzySubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
+            "-d:harfbuzzDynlib=$env:HARFBUZZY_HARFBUZZ_DLL",
+            "-d:harfbuzzSubsetDynlib=$env:HARFBUZZY_HARFBUZZ_SUBSET_DLL",
             "-d:harfbuzzyFribidiDynlib=$env:HARFBUZZY_FRIBIDI_DLL")
           nim c -r @flags --out:tests/harfbuzzy-mingw-c.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -5,10 +5,7 @@ Idiomatic Nim wrappers for HarfBuzz, with the low-level C API supplied by
 
 The package has two layers:
 
-- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Normal
-  Unix builds re-export the relevant `harfbuzz-nim` modules; bundled-static
-  builds, C++ builds, and Windows retain a compatible private backend for their
-  custom compiler and link modes.
+- `harfbuzzy/raw`: re-exports the upstream HarfBuzz C API for every build.
 - `harfbuzzy`: camelCase, reference-counted Nim wrappers for blobs, faces,
   fonts, buffers, sets, shaping, and subsetting.
 
@@ -84,6 +81,31 @@ uses ordered fallback typefaces for maximal covered segments.
 `ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
 to glyph-range helpers for editor and layout integrations.
 
+## Glyph outlines
+
+HarfBuzzy 0.5.0 adds `font.glyphOutline(glyphId)` for renderers that need vector
+contours. It returns owned `OutlineCommand` values for moves, lines, quadratic
+and cubic curves, and closed contours. No rendering library is required.
+
+```nim
+let glyphId = typeface.font.nominalGlyph(uint32('A'))
+for command in typeface.font.glyphOutline(glyphId):
+  case command.kind
+  of OutlineCommandKind.moveTo, OutlineCommandKind.lineTo:
+    echo command.kind, " ", command.to.x, ", ", command.to.y
+  of OutlineCommandKind.quadraticTo:
+    echo command.control1, " -> ", command.to
+  of OutlineCommandKind.cubicTo:
+    echo command.control1, " ", command.control2, " -> ", command.to
+  of OutlineCommandKind.closePath:
+    echo "close contour"
+```
+
+Coordinates follow the font's current scale and variations, with Y increasing
+upwards. `initTypeface` defaults to units per em. An outline-less glyph such as
+a space returns an empty sequence; glyph zero selects `.notdef`. Outlines
+require HarfBuzz 7.0 or newer, and remain valid after the font is released.
+
 ## Build
 
 Install dependencies with Atlas:
@@ -103,17 +125,38 @@ nim test
 `=copy`, `=dup`, and `=wasMoved` hooks, so callers do not call `hb_*_destroy`
 directly. The repository default is `--mm:atomicArc`.
 
-On Linux and macOS, `harfbuzz-nim` discovers the system HarfBuzz headers and
-libraries with `pkg-config`. FriBidi remains dynamically loaded. On Windows,
-the compatibility backend dynamically loads HarfBuzz and FriBidi from the
-normal DLL search path. Override the Windows DLL paths when needed:
+The dependency currently tracks `fix/static-native-types` from
+[`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
 
-```sh
-nim c -r -d:harfbuzzyDynlib=C:/path/to/harfbuzz.dll \
-  -d:harfbuzzySubsetDynlib=C:/path/to/harfbuzz-subset.dll \
-  -d:harfbuzzyFribidiDynlib=C:/path/to/fribidi.dll \
-  tests/tharfbuzzy.nim
+Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
+through `pkg-config`. Windows and C++ builds probe the runtime libraries
+at startup. To control loading explicitly on any platform, pass
+`-d:harfbuzzRuntime`. FriBidi remains dynamically loaded.
+
+In explicit runtime mode, call `loadHarfbuzz` before using the core APIs. A missing
+library raises `HarfBuzzLoadError`, so the application can choose a fallback:
+
+```nim
+import harfbuzzy
+
+try:
+  loadHarfbuzz() # Or loadHarfbuzz(path = "/path/to/libharfbuzz")
+  echo versionString()
+except HarfBuzzLoadError:
+  echo "Use the application's fallback"
 ```
+
+Set `-d:harfbuzzDynlib=...` and `-d:harfbuzzSubsetDynlib=...` to override
+library discovery at build time. FriBidi keeps `-d:harfbuzzyFribidiDynlib=...`.
+Load `HarfBuzzLibrary.Subset` before using subsetting in explicit runtime mode.
+HarfBuzzy derives only the procedure pointers it uses from upstream declarations.
+Loading resolves them once; calls then go directly to C.
+Optional symbols unavailable in the loaded library version remain nil.
+Successful HarfBuzz loads remain valid for the process lifetime.
+`harfbuzzLibraryStem(library)` is public for custom path discovery; it returns
+`harfbuzz`, `harfbuzz-subset`, or `harfbuzz-icu` without platform prefixes or suffixes.
+Pass a full filename using `loadHarfbuzz(library, path = ...)` to choose a library
+at runtime. Raw C definitions remain in `harfbuzz-nim`.
 
 To download and statically link HarfBuzz 14.2.0 (including its subset library)
 and FriBidi 1.0.16, request the `static` Atlas feature in your manifest:
@@ -130,8 +173,10 @@ build path with `-d:harfbuzzyStatic`:
 nim c -r -d:harfbuzzyStatic tests/tharfbuzzy.nim
 ```
 
-This opt-in build uses Nim's C backend and requires CMake 3.24 or newer, Meson,
-Ninja, and a native C/C++ toolchain. Both release archives are pinned by version
+This opt-in build supports Nim's C and C++ backends and requires CMake 3.24 or newer, Meson,
+Ninja, and a native C/C++ toolchain. Harfbuzzy enables the upstream
+`harfbuzzStatic` mode and supplies the bundled headers and archives, avoiding
+system HarfBuzz discovery and linking. Both release archives are pinned by version
 and SHA-256 hash. FriBidi
 uses its upstream Meson build to generate its Unicode tables and headers.
 Build files are cached under the
@@ -165,10 +210,3 @@ change either library's license.
 Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
 matching vcpkg libraries. Static builds require MSVC on Windows.
 The static archives can also be linked into a shared library on Unix.
-
-## Maintaining the Private Raw Backend
-
-`tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
-`tools/harfbuzz.c2nim`. The generated file is only a seed for the bundled-static
-and Windows compatibility backend, not the normal low-level layer. HarfBuzz
-macros and enum domains still need manual curation.

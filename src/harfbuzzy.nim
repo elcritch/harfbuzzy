@@ -8,6 +8,9 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
 
 import harfbuzzy/[fribidi_raw, raw]
 
+when defined(harfbuzzRuntime):
+  export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz, harfbuzzLibraryStem
+
 type
   Blob* = object
     handle: ptr hb_blob_t
@@ -153,7 +156,8 @@ type
   Position* = hb_position_t
 
   Tag* = distinct hb_tag_t
-  Script* = distinct hb_script_t
+  # Keep Nim move/reset operations independent of the native C enum type.
+  Script* = distinct uint32
   Language* = distinct hb_language_t
 
   Direction* {.pure.} = enum
@@ -226,6 +230,23 @@ type
     yBearing*: Position
     width*: Position
     height*: Position
+
+  OutlinePoint* = object
+    ## A point in the font's current scale, with Y increasing upwards.
+    x*, y*: float32
+
+  OutlineCommandKind* {.pure.} = enum ## An operation in a glyph's vector outline.
+    moveTo
+    lineTo
+    quadraticTo
+    cubicTo
+    closePath
+
+  OutlineCommand* = object ## A renderer-independent glyph outline operation.
+    kind*: OutlineCommandKind
+    to*: OutlinePoint ## Destination for all operations except `closePath`.
+    control1*: OutlinePoint ## Control point for quadratic and cubic curves.
+    control2*: OutlinePoint ## Second control point for cubic curves only.
 
   Scale* = object
     x*: int
@@ -745,7 +766,7 @@ func isEmojiCodepoint(codepoint: Codepoint): bool =
 func shouldSetScript(script: Script): bool =
   script.toRaw != HB_SCRIPT_INVALID and script.toRaw != HB_SCRIPT_UNKNOWN
 
-func scriptFor*(codepoint: Codepoint): Script =
+proc scriptFor*(codepoint: Codepoint): Script =
   if codepoint.isEmojiCodepoint:
     return scriptEmoji
   hb_unicode_script(hb_unicode_funcs_get_default(), hb_codepoint_t(codepoint)).toScript
@@ -754,7 +775,7 @@ func scriptIsNeutral(script: Script): bool =
   let value = script.toRaw
   value in [HB_SCRIPT_INVALID, HB_SCRIPT_UNKNOWN, HB_SCRIPT_COMMON, HB_SCRIPT_INHERITED]
 
-func inferScript(text: openArray[Codepoint], first, last: int): Script =
+proc inferScript(text: openArray[Codepoint], first, last: int): Script =
   for index in first ..< last:
     let script = scriptFor(text[index])
     if script.toRaw != HB_SCRIPT_UNKNOWN:
@@ -1155,6 +1176,112 @@ proc glyphExtents*(font: Font, glyph: Codepoint): GlyphExtents =
     width: extents.width,
     height: extents.height,
   )
+
+proc glyphOutline*(font: Font, glyph: Codepoint): seq[OutlineCommand] =
+  ## Returns a glyph's contours as move, line, curve, and close operations.
+  ## Coordinates use the font's current scale and variations, with Y upwards.
+  ## A whitespace or outline-less glyph returns an empty sequence. Glyph zero
+  ## selects the font's `.notdef` glyph. Requires HarfBuzz 7.0 or newer.
+  ## Raises `ValueError` for an uninitialized font or draw-function allocation
+  ## failure. The returned commands own their data independently of the font.
+  let handle = font.requireFont
+  if not versionAtLeast(7, 0, 0):
+    raise newException(ValueError, "glyph outlines require HarfBuzz 7.0 or newer")
+
+  type OutlineState = object
+    commands: seq[OutlineCommand]
+    error: ref Exception
+
+  proc appendCommand(data: pointer, command: OutlineCommand) {.nimcall, raises: [].} =
+    let state = cast[ptr OutlineState](data)
+    if state.error == nil:
+      try:
+        state.commands.add command
+      except Exception as error:
+        # Never unwind a Nim exception through HarfBuzz's C stack.
+        state.error = error
+
+  proc moveTo(
+      funcs: ptr hb_draw_funcs_t,
+      data: pointer,
+      state: ptr hb_draw_state_t,
+      x, y: cfloat,
+      userData: pointer,
+  ) {.cdecl, raises: [].} =
+    appendCommand(
+      data,
+      OutlineCommand(kind: OutlineCommandKind.moveTo, to: OutlinePoint(x: x, y: y)),
+    )
+
+  proc lineTo(
+      funcs: ptr hb_draw_funcs_t,
+      data: pointer,
+      state: ptr hb_draw_state_t,
+      x, y: cfloat,
+      userData: pointer,
+  ) {.cdecl, raises: [].} =
+    appendCommand(
+      data,
+      OutlineCommand(kind: OutlineCommandKind.lineTo, to: OutlinePoint(x: x, y: y)),
+    )
+
+  proc quadraticTo(
+      funcs: ptr hb_draw_funcs_t,
+      data: pointer,
+      state: ptr hb_draw_state_t,
+      controlX, controlY, x, y: cfloat,
+      userData: pointer,
+  ) {.cdecl, raises: [].} =
+    appendCommand(
+      data,
+      OutlineCommand(
+        kind: OutlineCommandKind.quadraticTo,
+        to: OutlinePoint(x: x, y: y),
+        control1: OutlinePoint(x: controlX, y: controlY),
+      ),
+    )
+
+  proc cubicTo(
+      funcs: ptr hb_draw_funcs_t,
+      data: pointer,
+      state: ptr hb_draw_state_t,
+      control1X, control1Y, control2X, control2Y, x, y: cfloat,
+      userData: pointer,
+  ) {.cdecl, raises: [].} =
+    appendCommand(
+      data,
+      OutlineCommand(
+        kind: OutlineCommandKind.cubicTo,
+        to: OutlinePoint(x: x, y: y),
+        control1: OutlinePoint(x: control1X, y: control1Y),
+        control2: OutlinePoint(x: control2X, y: control2Y),
+      ),
+    )
+
+  proc closePath(
+      funcs: ptr hb_draw_funcs_t,
+      data: pointer,
+      state: ptr hb_draw_state_t,
+      userData: pointer,
+  ) {.cdecl, raises: [].} =
+    appendCommand(data, OutlineCommand(kind: OutlineCommandKind.closePath))
+
+  let funcs = hb_draw_funcs_create()
+  if funcs == nil:
+    raise newException(ValueError, "could not create HarfBuzz draw functions")
+  defer:
+    hb_draw_funcs_destroy(funcs)
+  hb_draw_funcs_set_move_to_func(funcs, moveTo, nil, nil)
+  hb_draw_funcs_set_line_to_func(funcs, lineTo, nil, nil)
+  hb_draw_funcs_set_quadratic_to_func(funcs, quadraticTo, nil, nil)
+  hb_draw_funcs_set_cubic_to_func(funcs, cubicTo, nil, nil)
+  hb_draw_funcs_set_close_path_func(funcs, closePath, nil, nil)
+  hb_draw_funcs_make_immutable(funcs)
+  var state: OutlineState
+  hb_font_draw_glyph(handle, glyph, funcs, addr state)
+  if state.error != nil:
+    raise state.error
+  result = move(state.commands)
 
 proc toEm*(face: Face, value: Position): float =
   let units = face.upem
@@ -1631,7 +1758,7 @@ proc missingGlyphIndices*(run: ShapedRun): seq[int] =
 proc hasMissingGlyphs*(run: ShapedRun): bool =
   run.glyphRun.hasMissingGlyphs
 
-func codepointNeedsGlyph(codepoint: Codepoint): bool =
+proc codepointNeedsGlyph(codepoint: Codepoint): bool =
   not (
     codepoint == 0x0009'u32 or codepoint == 0x000A'u32 or codepoint == 0x000D'u32 or
     codepoint == 0x0020'u32 or codepoint == 0x200C'u32 or codepoint == 0x200D'u32 or

@@ -3,6 +3,14 @@ import std/[os, sequtils, strutils, unittest]
 import harfbuzzy
 import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
+from harfbuzz/hb_draw import nil
+
+when defined(harfbuzzRuntime):
+  loadHarfbuzz()
+  loadHarfbuzz(HarfBuzzLibrary.Subset)
+
+when hbStaticEnabled:
+  import harfbuzzy/private/staticHarfbuzz
 
 proc findFixtureFont(paths: openArray[string]): string =
   for path in paths:
@@ -48,6 +56,9 @@ const
   arabicText = "\u0633\u0644\u0627\u0645"
 
 static:
+  when hbStaticEnabled:
+    doAssert defined(harfbuzzStatic)
+    doAssert not declared(hbLib)
   doAssert sizeof(hb_var_int_t) == 4
   doAssert sizeof(hb_var_num_t) == 4
   doAssert sizeof(hb_feature_t) == 16
@@ -84,7 +95,7 @@ suite "harfbuzzy raw bindings":
     check versionAtLeast(1, 0, 0)
     check version().major >= 1
     when hbStaticEnabled:
-      check versionString() == HB_VERSION_STRING
+      check versionString() == staticHarfbuzz.harfbuzzVersion
 
   test "FriBidi classifies brackets and resolves mixed-direction levels":
     var
@@ -130,6 +141,57 @@ suite "harfbuzzy raw bindings":
     let cachedPlan = createCachedPlan(hb_face_get_empty(), addr props, nil, 0, nil)
     check cachedPlan != nil
     hb_shape_plan_destroy(cachedPlan)
+
+suite "upstream draw interoperability":
+  test "upstream callbacks accept handles from the raw backend":
+    type DrawData = object
+      moves: int
+      validState: bool
+      x, y: cfloat
+
+    proc moveTo(
+        funcs: ptr hb_draw.hb_draw_funcs_t,
+        data: pointer,
+        state: ptr hb_draw.hb_draw_state_t,
+        x, y: cfloat,
+        userData: pointer,
+    ) {.cdecl, raises: [].} =
+      let draw = cast[ptr DrawData](data)
+      inc draw.moves
+      draw.validState = funcs != nil and state != nil
+      draw.x = x
+      draw.y = y
+
+    let path = currentSourcePath().parentDir / "fixtures" / "outlines" / "quadratic.ttf"
+    let blob = hb_blob_create_from_file_or_fail(path.cstring)
+    require blob != nil
+    defer:
+      hb_blob_destroy(blob)
+    let face = hb_face_create(blob, 0)
+    require face != nil
+    defer:
+      hb_face_destroy(face)
+    let font = hb_font_create(face)
+    require font != nil
+    defer:
+      hb_font_destroy(font)
+    hb_ot_font_set_funcs(font)
+    hb_font_set_scale(font, 1000, 1000)
+    var glyph: hb_codepoint_t
+    require hb_font_get_nominal_glyph(font, 65, addr glyph) != 0
+
+    let funcs = hb_draw_funcs_create()
+    require funcs != nil
+    defer:
+      hb_draw_funcs_destroy(funcs)
+    let callback: hb_draw.hb_draw_move_to_func_t = moveTo
+    hb_draw_funcs_set_move_to_func(funcs, callback, nil, nil)
+    var data: DrawData
+    hb_font_draw_glyph(font, glyph, funcs, addr data)
+    check data.moves == 1
+    check data.validState
+    check data.x == 100
+    check data.y == 0
 
 suite "harfbuzzy wrapper":
   test "tags, scripts, languages, directions, and features":
@@ -451,3 +513,80 @@ suite "harfbuzzy wrapper":
     let subsetFace = subset(face, input)
     check subsetFace.upem == face.upem
     check subsetFace.glyphCount > 0
+
+const outlineFixtureDir = currentSourcePath().parentDir / "fixtures" / "outlines"
+
+proc outlineFixtureFont(name: string): Font =
+  initTypeface(initFace(initBlob(readFile(outlineFixtureDir / name)))).font
+
+suite "glyph outlines":
+  test "TrueType outlines retain quadratic control points and closed contours":
+    let font = outlineFixtureFont("quadratic.ttf")
+    let commands = font.glyphOutline(font.nominalGlyph(65))
+    check commands.len > 3
+    check commands[0].kind == OutlineCommandKind.moveTo
+    check commands[0].to == OutlinePoint(x: 100, y: 0)
+    check commands[1].kind == OutlineCommandKind.lineTo
+    check commands[1].to == OutlinePoint(x: 500, y: 0)
+    check commands[2].kind == OutlineCommandKind.quadraticTo
+    check commands[2].control1 == OutlinePoint(x: 500, y: 600)
+    check commands[2].to == OutlinePoint(x: 100, y: 600)
+    check commands[^1].kind == OutlineCommandKind.closePath
+
+  test "CFF outlines retain both cubic control points":
+    let font = outlineFixtureFont("cubic.otf")
+    let commands = font.glyphOutline(font.nominalGlyph(65))
+    check commands.len > 3
+    check commands[0].to == OutlinePoint(x: 100, y: 0)
+    check commands[2].kind == OutlineCommandKind.cubicTo
+    check commands[2].control1 == OutlinePoint(x: 600, y: 100)
+    check commands[2].control2 == OutlinePoint(x: 600, y: 500)
+    check commands[2].to == OutlinePoint(x: 100, y: 600)
+    check commands[^1].kind == OutlineCommandKind.closePath
+
+  test "outline coordinates follow the font scale without flipping Y":
+    var font = outlineFixtureFont("quadratic.ttf")
+    let glyph = font.nominalGlyph(65)
+    let original = font.glyphOutline(glyph)
+    font.setScale(2000, 3000)
+    let scaled = font.glyphOutline(glyph)
+    check scaled.len == original.len
+    for index, command in scaled:
+      check command.kind == original[index].kind
+      check command.to.x == original[index].to.x * 2
+      check command.to.y == original[index].to.y * 3
+      check command.control1.x == original[index].control1.x * 2
+      check command.control1.y == original[index].control1.y * 3
+      check command.control2.x == original[index].control2.x * 2
+      check command.control2.y == original[index].control2.y * 3
+
+  test "outlines follow variable font coordinates":
+    var font = outlineFixtureFont("variable.ttf")
+    let glyph = font.nominalGlyph(65)
+    let regular = font.glyphOutline(glyph)
+    font.setVariations([initVariation(toTag("wght"), 900)])
+    let heavy = font.glyphOutline(glyph)
+    check regular[1].to.x == 500
+    check heavy[1].to.x == 600
+    check heavy[2].control1.x == 600
+    check heavy[2].to == regular[2].to
+
+  test "empty outlines and the notdef glyph have distinct results":
+    let font = outlineFixtureFont("quadratic.ttf")
+    check font.glyphOutline(font.nominalGlyph(32)).len == 0
+    check font.glyphOutline(0).len > 0
+
+  test "commands outlive the font and successive calls own separate storage":
+    var first = block:
+      let font = outlineFixtureFont("quadratic.ttf")
+      font.glyphOutline(font.nominalGlyph(65))
+    let second = block:
+      let font = outlineFixtureFont("quadratic.ttf")
+      font.glyphOutline(font.nominalGlyph(65))
+    check first == second
+    first[0].to.x = -1
+    check second[0].to.x == 100
+
+  test "uninitialized fonts raise ValueError":
+    expect ValueError:
+      discard Font().glyphOutline(0)

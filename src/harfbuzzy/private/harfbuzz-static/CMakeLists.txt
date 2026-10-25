@@ -39,6 +39,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(harfbuzz)
 
+# Upstream Nim bindings include <harfbuzz/hb.h>, matching an installed tree.
+file(GLOB public_headers "${harfbuzz_SOURCE_DIR}/src/hb*.h")
+file(COPY ${public_headers} DESTINATION "${CMAKE_BINARY_DIR}/include/harfbuzz")
+
 # The core amalgamation already defines these helpers. Resolve the subset's
 # references through its core dependency rather than defining them twice.
 get_target_property(subset_sources harfbuzz-subset SOURCES)
