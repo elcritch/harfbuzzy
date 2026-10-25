@@ -1,14 +1,16 @@
 # harfbuzzy
 
-Nim bindings for HarfBuzz, generated and curated against the vendored
-`deps/harfbuzz` 14.2.0 headers.
+Idiomatic Nim wrappers for HarfBuzz, with the low-level C API supplied by
+[`harfbuzz-nim`](https://github.com/nimbase/harfbuzz-nim).
 
 The package has two layers:
 
-- `harfbuzzy/raw`: ABI-shaped C bindings for the core HarfBuzz, OpenType, AAT,
-  and subset entry points used by this package.
-- `harfbuzzy`: reference-counted Nim handle wrappers for blobs, faces, fonts,
-  buffers, sets, shaping, and subset input.
+- `harfbuzzy/raw`: the snake_case HarfBuzz C API used by this package. Normal
+  Unix builds re-export the relevant `harfbuzz-nim` modules; bundled-static
+  builds, C++ builds, and Windows retain a compatible private backend for their
+  custom compiler and link modes.
+- `harfbuzzy`: camelCase, reference-counted Nim wrappers for blobs, faces,
+  fonts, buffers, sets, shaping, and subsetting.
 
 ## Example
 
@@ -96,20 +98,20 @@ Run tests:
 nim test
 ```
 
-`harfbuzzy` requires `--mm:arc`, `--mm:orc`, or `--mm:atomicArc`. The wrapper
-types own HarfBuzz handles with Nim destructors, so callers do not call
-`hb_*_destroy` directly. The repository default is `--mm:atomicArc`.
+`harfbuzzy` requires Nim 2.2.10 or newer and `--mm:arc`, `--mm:orc`, or
+`--mm:atomicArc`. Its high-level types own HarfBuzz handles through `=destroy`,
+`=copy`, `=dup`, and `=wasMoved` hooks, so callers do not call `hb_*_destroy`
+directly. The repository default is `--mm:atomicArc`.
 
-By default, the raw modules include HarfBuzz headers from `deps/harfbuzz/src`
-when that checkout exists, otherwise they use `pkg-config --cflags harfbuzz`.
-They dynamically load `libharfbuzz`, `libharfbuzz-subset`, and `libfribidi`. On
-macOS they use Homebrew prefixes when available. Override library paths when
-needed:
+On Linux and macOS, `harfbuzz-nim` discovers the system HarfBuzz headers and
+libraries with `pkg-config`. FriBidi remains dynamically loaded. On Windows,
+the compatibility backend dynamically loads HarfBuzz and FriBidi from the
+normal DLL search path. Override the Windows DLL paths when needed:
 
 ```sh
-nim c -r -d:harfbuzzyDynlib=/path/to/libharfbuzz.dylib \
-  -d:harfbuzzySubsetDynlib=/path/to/libharfbuzz-subset.dylib \
-  -d:harfbuzzyFribidiDynlib=/path/to/libfribidi.dylib \
+nim c -r -d:harfbuzzyDynlib=C:/path/to/harfbuzz.dll \
+  -d:harfbuzzySubsetDynlib=C:/path/to/harfbuzz-subset.dll \
+  -d:harfbuzzyFribidiDynlib=C:/path/to/fribidi.dll \
   tests/tharfbuzzy.nim
 ```
 
@@ -164,8 +166,9 @@ Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
 matching vcpkg libraries. Static builds require MSVC on Windows.
 The static archives can also be linked into a shared library on Unix.
 
-## Regenerating Raw Seeds
+## Maintaining the Private Raw Backend
 
 `tools/generate_raw_bindings.sh` runs `c2nim` with the directive file in
-`tools/harfbuzz.c2nim`. The generated file is a seed for review, not the final
-raw layer; HarfBuzz macros and enum domains still need manual curation.
+`tools/harfbuzz.c2nim`. The generated file is only a seed for the bundled-static
+and Windows compatibility backend, not the normal low-level layer. HarfBuzz
+macros and enum domains still need manual curation.
