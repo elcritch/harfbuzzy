@@ -5,7 +5,7 @@ license       = "MIT"
 srcDir        = "src"
 
 requires "nim >= 2.2.10"
-requires "https://github.com/elcritch/harfbuzz-nim#fix/static-native-types"
+requires "https://github.com/nimbase/harfbuzz-nim#2781852907457030d71fb700084c1d10770a9593"
 
 feature "static":
   discard
