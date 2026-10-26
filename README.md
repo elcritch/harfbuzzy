@@ -125,8 +125,8 @@ nim test
 `=copy`, `=dup`, and `=wasMoved` hooks, so callers do not call `hb_*_destroy`
 directly. The repository default is `--mm:atomicArc`.
 
-The dependency currently tracks `fix/static-native-types` from
-[`harfbuzz-nim` PR #2](https://github.com/nimbase/harfbuzz-nim/pull/2), version 0.3.0.
+The dependency pins the upstream [`harfbuzz-nim`](https://github.com/nimbase/harfbuzz-nim)
+0.3.0 merge commit containing the static C/C++ binding fixes.
 
 Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
 through `pkg-config`. Windows and C++ builds probe the runtime libraries
