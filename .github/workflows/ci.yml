@@ -89,6 +89,8 @@ jobs:
           nim test
           nim cpp -r --out:tests/harfbuzzy-dynamic-cpp tests/tharfbuzzy.nim
           nim c -r -d:harfbuzzRuntime tests/fixtures/optionalharfbuzz.nim
+          nim c -r -d:feature.harfbuzzy.runtime tests/truntime_loading.nim
+          nim c -r -d:feature.harfbuzzy.runtime tests/tfribidi_runtime.nim
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             hbSharedFilename=libharfbuzz.dylib
           else
@@ -96,6 +98,11 @@ jobs:
           fi
           export HARFBUZZ_TEST_CORE_PATH="$(pkg-config --variable=libdir harfbuzz)/$hbSharedFilename"
           nim cpp -r -d:harfbuzzRuntime tests/truntime_loading.nim
+          export HARFBUZZY_TEST_FRIBIDI_PATH="$(pkg-config --variable=libdir fribidi)/${hbSharedFilename/harfbuzz/fribidi}"
+          nim cpp -r -d:harfbuzzRuntime tests/tfribidi_runtime.nim
+          nim c -r -d:harfbuzzRuntime "-d:harfbuzzyFribidiDynlib=(missing|)$HARFBUZZY_TEST_FRIBIDI_PATH" tests/tfribidi_runtime.nim
+          nim c -r -d:harfbuzzyFribidiDynlib=missing-fribidi tests/fixtures/optionalfribidi.nim
+          nim c -r -d:harfbuzzyFribidiRuntime -d:expectMissingFriBidi -d:harfbuzzyFribidiDynlib=missing-fribidi tests/tfribidi_runtime.nim
           nim c -r -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
           nim cpp -r -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/fixtures/optionalharfbuzz.nim
 
@@ -113,8 +120,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r @flags tests/fixtures/optionalharfbuzz.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r @flags -d:feature.harfbuzzy.runtime tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r @flags -d:feature.harfbuzzy.runtime tests/tfribidi_runtime.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:HARFBUZZ_TEST_CORE_PATH = $env:HARFBUZZY_HARFBUZZ_DLL
           nim cpp -r @flags -d:harfbuzzRuntime tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzyFribidiDynlib=missing-fribidi tests/fixtures/optionalfribidi.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:HARFBUZZY_TEST_FRIBIDI_PATH = $env:HARFBUZZY_FRIBIDI_DLL
+          nim cpp -r @flags -d:harfbuzzRuntime tests/tfribidi_runtime.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzRuntime "-d:harfbuzzyFribidiDynlib=(missing|)$env:HARFBUZZY_FRIBIDI_DLL" tests/tfribidi_runtime.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
+            -d:harfbuzzRuntime -d:expectMissingFriBidi -d:harfbuzzyFribidiDynlib=missing-fribidi tests/tfribidi_runtime.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r --cc:vcc --vcc.exe:cl.exe --vcc.linkerexe:cl.exe --passC:/MT `
             -d:harfbuzzRuntime -d:expectMissing -d:harfbuzzDynlib=missing-harfbuzz-core tests/truntime_loading.nim
@@ -129,7 +152,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          nim c -r -d:harfbuzzyStatic \
+          nim c -r -d:harfbuzzyStatic -d:feature.harfbuzzy.runtime \
             --passC:-Werror=incompatible-pointer-types \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzDynlib=harfbuzzy-missing-core \

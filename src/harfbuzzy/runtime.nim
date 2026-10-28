@@ -22,7 +22,8 @@ const
 var
   loaderLock: Lock
   handles: array[HarfBuzzLibrary, LibHandle]
-  loadedPaths: array[HarfBuzzLibrary, string]
+  # Shared paths have the same process lifetime as the library handles.
+  loadedPaths: array[HarfBuzzLibrary, cstring]
   binders: array[HarfBuzzLibrary, seq[ImportBinder]]
 
 initLock(loaderLock)
@@ -69,7 +70,7 @@ proc loadHarfbuzz*(library = HarfBuzzLibrary.Core, path = "") {.gcsafe.} =
   {.cast(gcsafe).}:
     withLock loaderLock:
       if handles[library] != nil:
-        if path.len > 0 and path != loadedPaths[library]:
+        if path.len > 0 and path != $loadedPaths[library]:
           raise newException(ValueError, "HarfBuzz " & $library & " is already loaded")
         return
       let names =
@@ -94,7 +95,8 @@ proc loadHarfbuzz*(library = HarfBuzzLibrary.Core, path = "") {.gcsafe.} =
         for binder in binders[library]:
           binder(handle)
         handles[library] = handle
-        loadedPaths[library] = name
+        loadedPaths[library] = cast[cstring](allocShared0(name.len + 1))
+        copyMem(loadedPaths[library], name.cstring, name.len)
         return
       raise newException(
         HarfBuzzLoadError,

@@ -5,9 +5,18 @@ import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
 from harfbuzz/hb_draw import nil
 
-when defined(harfbuzzRuntime):
+when not hbStaticEnabled and (
+  defined(harfbuzzRuntime) or defined(feature.harfbuzzy.runtime) or
+  defined(features.harfbuzzy.runtime)
+):
   loadHarfbuzz()
   loadHarfbuzz(HarfBuzzLibrary.Subset)
+
+when not hbStaticEnabled and (
+  defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime) or
+  defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime)
+):
+  loadFribidi()
 
 when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz

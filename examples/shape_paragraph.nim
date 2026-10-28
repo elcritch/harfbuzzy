@@ -5,6 +5,9 @@ import harfbuzzy
 when defined(harfbuzzRuntime):
   loadHarfbuzz()
 
+when defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime):
+  loadFribidi()
+
 proc findFont(paths: openArray[string]): string =
   for path in paths:
     if fileExists(path):

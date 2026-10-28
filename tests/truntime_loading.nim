@@ -1,5 +1,6 @@
 ## Runtime imports stay nil until an explicit, recoverable library load.
-when defined(harfbuzzRuntime):
+when defined(harfbuzzRuntime) or defined(feature.harfbuzzy.runtime) or
+    defined(features.harfbuzzy.runtime):
   import std/[dynlib, os, unittest]
   import harfbuzzy/raw
 

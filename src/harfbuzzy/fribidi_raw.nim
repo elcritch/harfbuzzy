@@ -3,6 +3,9 @@
 when defined(macosx) or defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
   import std/os
 
+when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+  import std/[dynlib, locks, strutils]
+
 when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
   import harfbuzzy/private/staticHarfbuzz
 
@@ -29,15 +32,6 @@ when defined(macosx) and
 else:
   const fribidiDetectedBrewPrefix = ""
 
-const fribidiIncludeDir =
-  when defined(macosx) and fribidiDetectedBrewPrefix.len > 0:
-    fribidiDetectedBrewPrefix / "include" / "fribidi"
-  else:
-    ""
-
-when fribidiIncludeDir.len > 0:
-  {.passC: "-I" & fribidiIncludeDir.}
-
 const fribidiLib* =
   when fribidiDynlibOverride.len > 0:
     fribidiDynlibOverride
@@ -49,9 +43,6 @@ const fribidiLib* =
     "libfribidi.dylib"
   else:
     "libfribidi.so(|.0)"
-
-when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
-  {.pragma: fribidiImport, dynlib: fribidiLib.}
 
 type
   FriBidiBoolean* = cint
@@ -92,25 +83,132 @@ func fribidi_is_rtl*(typ: FriBidiCharType): bool =
 func fribidi_is_arabic*(typ: FriBidiCharType): bool =
   (typ and FRIBIDI_MASK_ARABIC) != 0
 
-proc fribidi_get_bidi_type*(
-  ch: FriBidiChar
-): FriBidiCharType {.cdecl, importc: "fribidi_get_bidi_type", fribidiImport.}
+when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
+  proc fribidi_get_bidi_type*(
+    ch: FriBidiChar
+  ): FriBidiCharType {.cdecl, importc: "fribidi_get_bidi_type", fribidiImport.}
 
-proc fribidi_get_bidi_types*(
-  str: ptr FriBidiChar, len: FriBidiStrIndex, btypes: ptr FriBidiCharType
-) {.cdecl, importc: "fribidi_get_bidi_types", fribidiImport.}
+  proc fribidi_get_bidi_types*(
+    str: ptr FriBidiChar, len: FriBidiStrIndex, btypes: ptr FriBidiCharType
+  ) {.cdecl, importc: "fribidi_get_bidi_types", fribidiImport.}
 
-proc fribidi_get_bracket_types*(
-  str: ptr FriBidiChar,
-  len: FriBidiStrIndex,
-  types: ptr FriBidiCharType,
-  btypes: ptr FriBidiBracketType,
-) {.cdecl, importc: "fribidi_get_bracket_types", fribidiImport.}
+  proc fribidi_get_bracket_types*(
+    str: ptr FriBidiChar,
+    len: FriBidiStrIndex,
+    types: ptr FriBidiCharType,
+    btypes: ptr FriBidiBracketType,
+  ) {.cdecl, importc: "fribidi_get_bracket_types", fribidiImport.}
 
-proc fribidi_get_par_embedding_levels_ex*(
-  bidiTypes: ptr FriBidiCharType,
-  bracketTypes: ptr FriBidiBracketType,
-  len: FriBidiStrIndex,
-  pbaseDir: ptr FriBidiParType,
-  embeddingLevels: ptr FriBidiLevel,
-): FriBidiLevel {.cdecl, importc: "fribidi_get_par_embedding_levels_ex", fribidiImport.}
+  proc fribidi_get_par_embedding_levels_ex*(
+    bidiTypes: ptr FriBidiCharType,
+    bracketTypes: ptr FriBidiBracketType,
+    len: FriBidiStrIndex,
+    pbaseDir: ptr FriBidiParType,
+    embeddingLevels: ptr FriBidiLevel,
+  ): FriBidiLevel {.
+    cdecl, importc: "fribidi_get_par_embedding_levels_ex", fribidiImport
+  .}
+
+else:
+  type FriBidiLoadError* = object of CatchableError
+    ## FriBidi or a required symbol could not be loaded.
+
+  var
+    fribidi_get_bidi_type*:
+      proc(ch: FriBidiChar): FriBidiCharType {.cdecl, gcsafe, raises: [].}
+    fribidi_get_bidi_types*: proc(
+      str: ptr FriBidiChar, len: FriBidiStrIndex, btypes: ptr FriBidiCharType
+    ) {.cdecl, gcsafe, raises: [].}
+    fribidi_get_bracket_types*: proc(
+      str: ptr FriBidiChar,
+      len: FriBidiStrIndex,
+      types: ptr FriBidiCharType,
+      btypes: ptr FriBidiBracketType,
+    ) {.cdecl, gcsafe, raises: [].}
+    fribidi_get_par_embedding_levels_ex*: proc(
+      bidiTypes: ptr FriBidiCharType,
+      bracketTypes: ptr FriBidiBracketType,
+      len: FriBidiStrIndex,
+      pbaseDir: ptr FriBidiParType,
+      embeddingLevels: ptr FriBidiLevel,
+    ): FriBidiLevel {.cdecl, gcsafe, raises: [].}
+    fribidiLock: Lock
+    fribidiHandle: LibHandle
+    # Shared path has the same process lifetime as the library handle.
+    fribidiLoadedPath: cstring
+
+  initLock(fribidiLock)
+
+  proc loadFribidi*(path = "") {.gcsafe.} =
+    ## Load FriBidi before using paragraph shaping or its raw procedures.
+    ## A path overrides platform discovery and the compile-time override.
+    ## Failed loads can be retried; successful libraries stay loaded for the process lifetime.
+    ## Call before starting workers that use FriBidi.
+    {.cast(gcsafe).}:
+      withLock fribidiLock:
+        if fribidiHandle != nil:
+          if path.len > 0 and path != $fribidiLoadedPath:
+            raise newException(ValueError, "FriBidi is already loaded")
+          return
+        var names =
+          if path.len > 0:
+            @[path]
+          elif fribidiDynlibOverride.len > 0:
+            var candidates: seq[string]
+            libCandidates(fribidiDynlibOverride, candidates)
+            candidates
+          elif defined(windows):
+            @["fribidi.dll", "libfribidi-0.dll", "libfribidi.dll"]
+          elif defined(macosx):
+            @[
+              "libfribidi.0.dylib", "libfribidi.dylib",
+              "/opt/homebrew/opt/fribidi/lib/libfribidi.0.dylib",
+              "/usr/local/opt/fribidi/lib/libfribidi.0.dylib",
+            ]
+          else:
+            @["libfribidi.so.0", "libfribidi.so"]
+        when defined(macosx) and fribidiDetectedBrewPrefix.len > 0:
+          if path.len == 0 and fribidiDynlibOverride.len == 0:
+            names.add fribidiDetectedBrewPrefix / "lib" / "libfribidi.dylib"
+        for name in names:
+          let handle = loadLib(name)
+          if handle != nil:
+            let symbols = [
+              symAddr(handle, "fribidi_get_bidi_type"),
+              symAddr(handle, "fribidi_get_bidi_types"),
+              symAddr(handle, "fribidi_get_bracket_types"),
+              symAddr(handle, "fribidi_get_par_embedding_levels_ex"),
+            ]
+            const symbolNames = [
+              "fribidi_get_bidi_type", "fribidi_get_bidi_types",
+              "fribidi_get_bracket_types", "fribidi_get_par_embedding_levels_ex",
+            ]
+            for i, symbol in symbols:
+              if symbol == nil:
+                unloadLib(handle)
+                raise newException(
+                  FriBidiLoadError,
+                  "missing FriBidi symbol: " & symbolNames[i] & " in " & name,
+                )
+            fribidi_get_bidi_type = cast[typeof(fribidi_get_bidi_type)](symbols[0])
+            fribidi_get_bidi_types = cast[typeof(fribidi_get_bidi_types)](symbols[1])
+            fribidi_get_bracket_types =
+              cast[typeof(fribidi_get_bracket_types)](symbols[2])
+            fribidi_get_par_embedding_levels_ex =
+              cast[typeof(fribidi_get_par_embedding_levels_ex)](symbols[3])
+            fribidiHandle = handle
+            fribidiLoadedPath = cast[cstring](allocShared0(name.len + 1))
+            copyMem(fribidiLoadedPath, name.cstring, name.len)
+            return
+        raise newException(
+          FriBidiLoadError, "could not load FriBidi; tried: " & names.join(", ")
+        )
+
+  when not (
+    defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime) or
+    defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime)
+  ):
+    try:
+      loadFribidi()
+    except FriBidiLoadError:
+      discard
