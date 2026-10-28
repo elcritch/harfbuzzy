@@ -9,6 +9,9 @@ when defined(harfbuzzRuntime):
   loadHarfbuzz()
   loadHarfbuzz(HarfBuzzLibrary.Subset)
 
+when defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime):
+  loadFribidi()
+
 when hbStaticEnabled:
   import harfbuzzy/private/staticHarfbuzz
 

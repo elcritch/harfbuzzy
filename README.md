@@ -131,7 +131,7 @@ The dependency pins the upstream [`harfbuzz-nim`](https://github.com/nimbase/har
 Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
 through `pkg-config`. Windows and C++ builds probe the runtime libraries
 at startup. To control loading explicitly on any platform, pass
-`-d:harfbuzzRuntime`. FriBidi remains dynamically loaded.
+`-d:harfbuzzRuntime`. FriBidi is dynamically loaded in shared builds.
 
 In explicit runtime mode, call `loadHarfbuzz` before using the core APIs. A missing
 library raises `HarfBuzzLoadError`, so the application can choose a fallback:
@@ -141,13 +141,22 @@ import harfbuzzy
 
 try:
   loadHarfbuzz() # Or loadHarfbuzz(path = "/path/to/libharfbuzz")
+  loadFribidi()  # Required before paragraph shaping
   echo versionString()
-except HarfBuzzLoadError:
+except HarfBuzzLoadError, FriBidiLoadError:
   echo "Use the application's fallback"
 ```
 
 Set `-d:harfbuzzDynlib=...` and `-d:harfbuzzSubsetDynlib=...` to override
-library discovery at build time. FriBidi keeps `-d:harfbuzzyFribidiDynlib=...`.
+library discovery at build time. Set `-d:harfbuzzyFribidiDynlib=...` for
+FriBidi, or pass a filename to `loadFribidi(path = ...)` at runtime.
+In explicit runtime mode FriBidi is not loaded until `loadFribidi` is called;
+`FriBidiLoadError` is catchable and failed loads can be retried.
+Use `-d:harfbuzzyFribidiRuntime` to control FriBidi loading independently of
+HarfBuzz. In other shared builds FriBidi is probed automatically at startup.
+Call `loadFribidi` before using paragraph shaping or raw FriBidi procedures,
+and before starting worker threads that use them. Successful loads remain valid
+for the process lifetime and cannot be replaced.
 Load `HarfBuzzLibrary.Subset` before using subsetting in explicit runtime mode.
 HarfBuzzy derives only the procedure pointers it uses from upstream declarations.
 Loading resolves them once; calls then go directly to C.

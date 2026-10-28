@@ -8,6 +8,9 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
 
 import harfbuzzy/[fribidi_raw, raw]
 
+when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+  export loadFribidi, FriBidiLoadError
+
 when defined(harfbuzzRuntime):
   export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz, harfbuzzLibraryStem
 
@@ -803,6 +806,10 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
       else:
         Direction.ltr
     return
+
+  when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+    if fribidi_raw.fribidi_get_bidi_types == nil:
+      raise newException(FriBidiLoadError, "FriBidi is not loaded; call loadFribidi()")
 
   let length = checkedCint(decoded.codepoints.len, "codepoint count")
   var bidiTypes = newSeq[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
