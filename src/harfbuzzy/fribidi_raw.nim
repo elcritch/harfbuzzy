@@ -1,12 +1,16 @@
 ## Minimal FriBidi bindings used by the paragraph shaping pipeline.
 
-when defined(macosx) or defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
+const fribidiStatic =
+  (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)) and
+  not defined(harfbuzzyNoFribidi)
+
+when defined(macosx) or fribidiStatic:
   import std/os
 
-when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+when not fribidiStatic:
   import std/[dynlib, locks, strutils]
 
-when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
+when fribidiStatic:
   import harfbuzzy/private/staticHarfbuzz
 
   when defined(vcc):
@@ -24,8 +28,7 @@ when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
 
 const fribidiDynlibOverride* {.strdefine: "harfbuzzyFribidiDynlib".} = ""
 
-when defined(macosx) and
-    not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+when defined(macosx) and not fribidiStatic:
   const fribidiDetectedBrewPrefix = staticExec(
     "sh -c 'if command -v brew >/dev/null 2>&1; then brew --prefix fribidi 2>/dev/null | tr -d \"\\n\"; fi'"
   )
@@ -83,7 +86,7 @@ func fribidi_is_rtl*(typ: FriBidiCharType): bool =
 func fribidi_is_arabic*(typ: FriBidiCharType): bool =
   (typ and FRIBIDI_MASK_ARABIC) != 0
 
-when defined(harfbuzzyStatic) or defined(features.harfbuzzy.static):
+when fribidiStatic:
   proc fribidi_get_bidi_type*(
     ch: FriBidiChar
   ): FriBidiCharType {.cdecl, importc: "fribidi_get_bidi_type", fribidiImport.}

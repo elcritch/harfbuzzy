@@ -54,6 +54,7 @@ list(REMOVE_ITEM subset_sources
 )
 set_property(TARGET harfbuzz-subset PROPERTY SOURCES ${subset_sources})
 
+if(NOT HARFBUZZY_NO_FRIBIDI)
 # FriBidi's upstream build generates its Unicode tables and public headers.
 # Use that build instead of maintaining a second list of C sources here.
 find_program(MESON_EXECUTABLE meson REQUIRED)
@@ -140,3 +141,5 @@ ExternalProject_Add(fribidi-native
   INSTALL_COMMAND "${MESON_EXECUTABLE}" install -C <BINARY_DIR> --no-rebuild
   BUILD_BYPRODUCTS "${CMAKE_BINARY_DIR}/fribidi-install/lib/${fribidi_archive}"
 )
+
+endif()

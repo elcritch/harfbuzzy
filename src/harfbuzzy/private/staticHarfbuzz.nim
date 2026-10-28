@@ -24,7 +24,7 @@ const
       getEnv("CFLAGS") & "\n" & getEnv("CXXFLAGS") & "\n" & getEnv("LDFLAGS") & "\n" &
       getEnv("CMAKE_GENERATOR") & "\n" & getEnv("CMAKE_GENERATOR_PLATFORM") & "\n" &
       getEnv("CMAKE_GENERATOR_TOOLSET") & "\n" & getEnv("SDKROOT") & "\n" &
-      getEnv("MACOSX_DEPLOYMENT_TARGET")
+      getEnv("MACOSX_DEPLOYMENT_TARGET") & "\n" & $defined(harfbuzzyNoFribidi)
   )
   harfbuzzBuildDir* = cacheDir / ("harfbuzz-" & harfbuzzVersion) / targetName / buildKey
   harfbuzzSourceDir* = harfbuzzBuildDir / "_deps" / "harfbuzz-src" / "src"
@@ -55,6 +55,7 @@ const
     quoteShell("-DHARFBUZZY_BUILD_DIR=" & harfbuzzBuildDir) & " " &
     quoteShell("-DHARFBUZZY_EXTRA_ARGS=" & harfbuzzyStaticCmakeArgs) & " " &
     quoteShell("-DHARFBUZZY_BUILD_JOBS=" & buildJobs) & " " &
+    (when defined(harfbuzzyNoFribidi): "-DHARFBUZZY_NO_FRIBIDI=ON " else: "") &
     (when defined(vcc): "-DHARFBUZZY_MSVC_RUNTIME=MultiThreaded " else: "") & "-P " &
     quoteShell(harfbuzzBuildScript)
 
@@ -76,7 +77,7 @@ static:
   runBuildCommand(buildCommand)
 
   if not fileExists(harfbuzzStaticLib) or not fileExists(harfbuzzSubsetStaticLib) or
-      not fileExists(fribidiStaticLib):
+      (not defined(harfbuzzyNoFribidi) and not fileExists(fribidiStaticLib)):
     raise newException(
       IOError,
       "harfbuzzy's static native build did not produce its libraries:\n" &
