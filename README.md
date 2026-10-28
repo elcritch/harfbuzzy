@@ -132,6 +132,9 @@ Shared builds with Nim's C backend on Linux and macOS discover system HarfBuzz
 through `pkg-config`. Windows and C++ builds probe the runtime libraries
 at startup. To control loading explicitly on any platform, pass
 `-d:harfbuzzRuntime`. FriBidi is dynamically loaded in shared builds.
+Atlas consumers can request the `runtime` feature on their Harfbuzzy dependency
+to select explicit runtime loading without a compiler switch. The `static`
+feature takes precedence when both features are enabled.
 
 In explicit runtime mode, call `loadHarfbuzz` before using the core APIs. A missing
 library raises `HarfBuzzLoadError`, so the application can choose a fallback:

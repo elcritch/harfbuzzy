@@ -6,8 +6,10 @@
 
 const
   hbStaticEnabled* = defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)
+  hbRuntimeFeature =
+    defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime)
   hbAutoLoad =
-    not hbStaticEnabled and not defined(harfbuzzRuntime) and
+    not hbStaticEnabled and not defined(harfbuzzRuntime) and not hbRuntimeFeature and
     (defined(windows) or defined(cpp))
 
 when hbStaticEnabled and defined(harfbuzzRuntime):
@@ -26,7 +28,7 @@ when hbStaticEnabled:
   {.passL: quoteShell(staticHarfbuzz.harfbuzzStaticLib).}
   when defined(posix):
     {.passL: "-pthread -lm".}
-elif hbAutoLoad:
+elif hbAutoLoad or hbRuntimeFeature:
   {.define: harfbuzzRuntime.}
 
 when defined(harfbuzzRuntime):

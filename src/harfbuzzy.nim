@@ -11,7 +11,10 @@ import harfbuzzy/[fribidi_raw, raw]
 when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
   export loadFribidi, FriBidiLoadError
 
-when defined(harfbuzzRuntime):
+when defined(harfbuzzRuntime) or (
+  (defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime)) and
+  not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static))
+):
   export HarfBuzzLibrary, HarfBuzzLoadError, loadHarfbuzz, harfbuzzLibraryStem
 
 type

@@ -9,3 +9,5 @@ requires "https://github.com/nimbase/harfbuzz-nim#2781852907457030d71fb700084c1d
 
 feature "static":
   discard
+feature "runtime":
+  discard

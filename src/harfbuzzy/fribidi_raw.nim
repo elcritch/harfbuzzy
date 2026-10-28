@@ -202,7 +202,10 @@ else:
           FriBidiLoadError, "could not load FriBidi; tried: " & names.join(", ")
         )
 
-  when not (defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime)):
+  when not (
+    defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime) or
+    defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime)
+  ):
     try:
       loadFribidi()
     except FriBidiLoadError:

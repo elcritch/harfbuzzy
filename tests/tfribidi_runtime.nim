@@ -1,5 +1,6 @@
 ## Exercise explicit FriBidi loading in a separate process.
-when defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime):
+when defined(harfbuzzRuntime) or defined(harfbuzzyFribidiRuntime) or
+    defined(feature.harfbuzzy.runtime) or defined(features.harfbuzzy.runtime):
   import std/[os, unittest]
   import harfbuzzy
   import harfbuzzy/fribidi_raw

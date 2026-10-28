@@ -89,6 +89,8 @@ jobs:
           nim test
           nim cpp -r --out:tests/harfbuzzy-dynamic-cpp tests/tharfbuzzy.nim
           nim c -r -d:harfbuzzRuntime tests/fixtures/optionalharfbuzz.nim
+          nim c -r -d:feature.harfbuzzy.runtime tests/truntime_loading.nim
+          nim c -r -d:feature.harfbuzzy.runtime tests/tfribidi_runtime.nim
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             hbSharedFilename=libharfbuzz.dylib
           else
@@ -118,6 +120,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           nim c -r @flags tests/fixtures/optionalharfbuzz.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r @flags -d:feature.harfbuzzy.runtime tests/truntime_loading.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          nim c -r @flags -d:feature.harfbuzzy.runtime tests/tfribidi_runtime.nim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:HARFBUZZ_TEST_CORE_PATH = $env:HARFBUZZY_HARFBUZZ_DLL
           nim cpp -r @flags -d:harfbuzzRuntime tests/truntime_loading.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -146,7 +152,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          nim c -r -d:harfbuzzyStatic \
+          nim c -r -d:harfbuzzyStatic -d:feature.harfbuzzy.runtime \
             --passC:-Werror=incompatible-pointer-types \
             "-d:harfbuzzyStaticCache=$GITHUB_WORKSPACE/deps/harfbuzz-static" \
             -d:harfbuzzDynlib=harfbuzzy-missing-core \
