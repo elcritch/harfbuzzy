@@ -134,7 +134,8 @@ else:
     ): FriBidiLevel {.cdecl, gcsafe, raises: [].}
     fribidiLock: Lock
     fribidiHandle: LibHandle
-    fribidiLoadedPath: string
+    # Shared path has the same process lifetime as the library handle.
+    fribidiLoadedPath: cstring
 
   initLock(fribidiLock)
 
@@ -146,7 +147,7 @@ else:
     {.cast(gcsafe).}:
       withLock fribidiLock:
         if fribidiHandle != nil:
-          if path.len > 0 and path != fribidiLoadedPath:
+          if path.len > 0 and path != $fribidiLoadedPath:
             raise newException(ValueError, "FriBidi is already loaded")
           return
         var names =
@@ -196,7 +197,8 @@ else:
             fribidi_get_par_embedding_levels_ex =
               cast[typeof(fribidi_get_par_embedding_levels_ex)](symbols[3])
             fribidiHandle = handle
-            fribidiLoadedPath = name
+            fribidiLoadedPath = cast[cstring](allocShared0(name.len + 1))
+            copyMem(fribidiLoadedPath, name.cstring, name.len)
             return
         raise newException(
           FriBidiLoadError, "could not load FriBidi; tried: " & names.join(", ")
