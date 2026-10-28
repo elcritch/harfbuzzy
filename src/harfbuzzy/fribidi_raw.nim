@@ -153,7 +153,9 @@ else:
           if path.len > 0:
             @[path]
           elif fribidiDynlibOverride.len > 0:
-            @[fribidiDynlibOverride]
+            var candidates: seq[string]
+            libCandidates(fribidiDynlibOverride, candidates)
+            candidates
           elif defined(windows):
             @["fribidi.dll", "libfribidi-0.dll", "libfribidi.dll"]
           elif defined(macosx):
