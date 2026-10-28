@@ -8,7 +8,8 @@ when not (defined(gcarc) or defined(gcorc) or defined(gcatomicarc)):
 
 import harfbuzzy/[fribidi_raw, raw]
 
-when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
+when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)) or
+    defined(harfbuzzyNoFribidi):
   export loadFribidi, FriBidiLoadError
 
 when defined(harfbuzzRuntime) or (
@@ -288,6 +289,11 @@ type
     ltr
     rtl
 
+  BidiMode* {.pure.} = enum
+    ## Select paragraph direction analysis.
+    fribidi ## Resolve mixed-direction text with FriBidi.
+    singleDirection ## Assume the entire paragraph has the specified direction.
+
   BidiLevel* = distinct uint8
 
   TextRun* = object
@@ -321,6 +327,7 @@ type
     clusterLevel*: ClusterLevel
 
   ParagraphOptions* = object
+    bidiMode*: BidiMode
     baseDirection*: ParagraphDirection
     language*: Language
     features*: seq[Feature]
@@ -677,8 +684,10 @@ proc initParagraphOptions*(
     shapers: openArray[string] = [],
     flags: BufferFlags = {},
     clusterLevel = ClusterLevel.monotoneGraphemes,
+    bidiMode = BidiMode.fribidi,
 ): ParagraphOptions =
   ParagraphOptions(
+    bidiMode: bidiMode,
     baseDirection: baseDirection,
     language: language,
     features: @features,
@@ -802,6 +811,11 @@ proc defaultLanguageForScript*(script: Script): Language =
 
 proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
   let decoded = decodeUtf8(text)
+  if options.bidiMode == BidiMode.singleDirection and
+      options.baseDirection == ParagraphDirection.autoDetect:
+    raise newException(
+      ValueError, "single-direction paragraphs require an explicit direction"
+    )
   if decoded.codepoints.len == 0:
     result.baseDirection =
       if options.baseDirection == ParagraphDirection.rtl:
@@ -810,29 +824,40 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
         Direction.ltr
     return
 
-  when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)):
-    if fribidi_raw.fribidi_get_bidi_types == nil:
-      raise newException(FriBidiLoadError, "FriBidi is not loaded; call loadFribidi()")
-
-  let length = checkedCint(decoded.codepoints.len, "codepoint count")
-  var bidiTypes = newSeq[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
-  var bracketTypes = newSeq[fribidi_raw.FriBidiBracketType](decoded.codepoints.len)
   var levels = newSeq[fribidi_raw.FriBidiLevel](decoded.codepoints.len)
-  var base = options.baseDirection.toFriBidiPar
+  if options.bidiMode == BidiMode.singleDirection:
+    result.baseDirection =
+      if options.baseDirection == ParagraphDirection.rtl:
+        Direction.rtl
+      else:
+        Direction.ltr
+    if result.baseDirection == Direction.rtl:
+      for level in levels.mitems:
+        level = 1
+  else:
+    when not (defined(harfbuzzyStatic) or defined(features.harfbuzzy.static)) or
+        defined(harfbuzzyNoFribidi):
+      if fribidi_raw.fribidi_get_bidi_types == nil:
+        raise
+          newException(FriBidiLoadError, "FriBidi is not loaded; call loadFribidi()")
 
-  fribidi_raw.fribidi_get_bidi_types(
-    unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0]
-  )
-  fribidi_raw.fribidi_get_bracket_types(
-    unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0], addr bracketTypes[0]
-  )
-  let maxLevel = fribidi_raw.fribidi_get_par_embedding_levels_ex(
-    addr bidiTypes[0], addr bracketTypes[0], length, addr base, addr levels[0]
-  )
-  if maxLevel == 0:
-    raise newException(ValueError, "FriBidi could not resolve embedding levels")
+    let length = checkedCint(decoded.codepoints.len, "codepoint count")
+    var bidiTypes = newSeq[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
+    var bracketTypes = newSeq[fribidi_raw.FriBidiBracketType](decoded.codepoints.len)
+    var base = options.baseDirection.toFriBidiPar
 
-  result.baseDirection = base.baseDirection
+    fribidi_raw.fribidi_get_bidi_types(
+      unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0]
+    )
+    fribidi_raw.fribidi_get_bracket_types(
+      unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0], addr bracketTypes[0]
+    )
+    let maxLevel = fribidi_raw.fribidi_get_par_embedding_levels_ex(
+      addr bidiTypes[0], addr bracketTypes[0], length, addr base, addr levels[0]
+    )
+    if maxLevel == 0:
+      raise newException(ValueError, "FriBidi could not resolve embedding levels")
+    result.baseDirection = base.baseDirection
   var first = 0
   while first < levels.len:
     var runScript = scriptFor(decoded.codepoints[first])

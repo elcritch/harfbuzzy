@@ -40,6 +40,23 @@ and separates emoji sequences so a `ShapeContext` can choose an emoji-capable
 fallback. `ParagraphOptions.language` supplies the BCP 47 language used for
 each detected run.
 
+When the text is known to have a single direction, paragraph shaping can run
+without FriBidi. Select the direction explicitly:
+
+```nim
+let options = initParagraphOptions(
+  baseDirection = ParagraphDirection.ltr,
+  bidiMode = BidiMode.singleDirection,
+)
+let paragraph = typeface.shapeParagraph("hello 世界", options)
+```
+
+This mode assumes all text has the specified direction; it does not detect or
+resolve mixed-direction text, numbers, punctuation, or bidi controls. Use the
+default FriBidi mode for text requiring Unicode bidi analysis. Script
+segmentation and `ShapeContext` font fallback remain available. An explicit
+`ltr` or `rtl` direction is required, including for empty text.
+
 More shaping controls are available when needed:
 
 ```nim
@@ -144,7 +161,7 @@ import harfbuzzy
 
 try:
   loadHarfbuzz() # Or loadHarfbuzz(path = "/path/to/libharfbuzz")
-  loadFribidi()  # Required before paragraph shaping
+  loadFribidi()  # Required for FriBidi paragraph analysis
   echo versionString()
 except HarfBuzzLoadError, FriBidiLoadError:
   echo "Use the application's fallback"
@@ -157,7 +174,7 @@ In explicit runtime mode FriBidi is not loaded until `loadFribidi` is called;
 `FriBidiLoadError` is catchable and failed loads can be retried.
 Use `-d:harfbuzzyFribidiRuntime` to control FriBidi loading independently of
 HarfBuzz. In other shared builds FriBidi is probed automatically at startup.
-Call `loadFribidi` before using paragraph shaping or raw FriBidi procedures,
+Call `loadFribidi` before using FriBidi paragraph analysis or raw FriBidi procedures,
 and before starting worker threads that use them. Successful loads remain valid
 for the process lifetime and cannot be replaced.
 Load `HarfBuzzLibrary.Subset` before using subsetting in explicit runtime mode.
@@ -218,6 +235,12 @@ Both native builds use the same compiler and MSVC runtime.
 The downloaded source trees retain their upstream `COPYING` files. HarfBuzz uses
 its permissive license; FriBidi is LGPL-2.1-or-later. Static linking does not
 change either library's license.
+
+
+For a bundled static HarfBuzz build without building or linking FriBidi, add
+`-d:harfbuzzyNoFribidi` alongside `-d:harfbuzzyStatic` (or the Atlas `static`
+feature). The default bidi mode can still use an explicitly loaded shared
+FriBidi library; otherwise select `BidiMode.singleDirection`.
 
 Windows CI tests dynamic loading with both MSVC and MinGW, using each compiler's
 matching vcpkg libraries. Static builds require MSVC on Windows.
