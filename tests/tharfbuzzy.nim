@@ -452,6 +452,29 @@ suite "harfbuzzy wrapper":
         check paragraph.logicalRuns[0].typefaceIndex == 0
         check paragraph.logicalRuns[1].typefaceIndex == 1
 
+  test "shape context returns to the primary face after a fallback glyph":
+    # The synthetic primary covers only space and "A"; a common-script symbol
+    # stays in the Latin run, so only font coverage can split the segment.
+    let primary = typefaceFromFile(
+      currentSourcePath().parentDir / "fixtures" / "outlines" / "quadratic.ttf"
+    )
+    let boxBar = 0x2502'u32
+    require primary.font.hasGlyph(uint32('A'))
+    require not primary.font.hasGlyph(boxBar)
+    if fileExists(fixtureFont):
+      let fallback = typefaceFromFile(fixtureFont)
+      if fallback.font.hasGlyph(boxBar) and fallback.font.hasGlyph(uint32('A')):
+        let paragraph = initShapeContext(primary, [fallback]).shapeParagraph("│ AAA")
+
+        require paragraph.logicalRuns.len == 2
+        check paragraph.logicalRuns[0].typefaceIndex == 1
+        check paragraph.logicalRuns[0].textRun.codepointStart == 0
+        check paragraph.logicalRuns[0].textRun.codepointEnd == 2
+        check paragraph.logicalRuns[1].typefaceIndex == 0
+        check paragraph.logicalRuns[1].textRun.codepointStart == 2
+        check paragraph.logicalRuns[1].textRun.codepointEnd == 5
+        check not paragraph.logicalRuns[1].hasMissingGlyphs
+
   test "font fallback callback can override selection":
     proc chooseFallback(text: string, run: TextRun, typefaces: seq[Typeface]): int =
       discard text
