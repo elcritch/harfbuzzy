@@ -1809,13 +1809,22 @@ proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =
   true
 
 proc supportedPrefixEnd(
-    typeface: Typeface, decoded: DecodedText, first, ending: int
+    typefaces: openArray[Typeface],
+    typefaceIndex: int,
+    decoded: DecodedText,
+    first, ending: int,
 ): int =
+  ## Extends a segment while the selected face covers it and no preferred
+  ## (earlier) face does, so fallback faces only cover what the primary lacks.
   result = first
   while result < ending:
     let codepoint = decoded.codepoints[result]
-    if codepointNeedsGlyph(codepoint) and not typeface.font.hasGlyph(codepoint):
-      return
+    if codepointNeedsGlyph(codepoint):
+      if not typefaces[typefaceIndex].font.hasGlyph(codepoint):
+        return
+      for preferred in 0 ..< typefaceIndex:
+        if typefaces[preferred].font.hasGlyph(codepoint):
+          return
     inc result
 
 proc sliceTextRun(run: TextRun, decoded: DecodedText, first, ending: int): TextRun =
@@ -1848,7 +1857,8 @@ proc selectTypefaceSegment(
   for index, typeface in context.typefaces:
     if typeface.font.hasGlyph(decoded.codepoints[required]):
       result.typefaceIndex = index
-      result.ending = typeface.supportedPrefixEnd(decoded, first, run.codepointEnd)
+      result.ending =
+        context.typefaces.supportedPrefixEnd(index, decoded, first, run.codepointEnd)
       return
   result.ending = required + 1
 
