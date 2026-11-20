@@ -358,8 +358,8 @@ type
 
   DecodedText = object
     codepoints: seq[Codepoint]
-    byteStarts: seq[int]
-    byteEnds: seq[int]
+    # Rune boundaries, including the final byte length. Empty for the ASCII fast path.
+    byteOffsets: seq[int]
 
   BidiAnalysis = object
     baseDirection: Direction
@@ -707,28 +707,38 @@ proc continuationValue(text: string, index: int): uint32 =
     raise newException(ValueError, "malformed UTF-8: invalid continuation byte")
   uint32(value and 0x3F'u8)
 
-proc addDecoded(decoded: var DecodedText, codepoint: uint32, byteStart, byteEnd: int) =
+proc decodeAscii(text: string, codepoints: var seq[Codepoint]): bool =
+  for ch in text:
+    if ord(ch) >= 128:
+      return false
+  codepoints = newSeqUninit[Codepoint](text.len)
+  for index, ch in text:
+    codepoints[index] = Codepoint(ch)
+  result = true
+
+proc addDecoded(decoded: var DecodedText, codepoint: uint32, byteStart: int) =
   if codepoint > 0x10FFFF'u32 or (codepoint >= 0xD800'u32 and codepoint <= 0xDFFF'u32):
     raise newException(ValueError, "malformed UTF-8: invalid Unicode scalar value")
   decoded.codepoints.add Codepoint(codepoint)
-  decoded.byteStarts.add byteStart
-  decoded.byteEnds.add byteEnd
+  decoded.byteOffsets.add byteStart
 
 proc decodeUtf8(text: string): DecodedText =
+  if decodeAscii(text, result.codepoints):
+    return
   var index = 0
   while index < text.len:
     let start = index
     let first = byteValue(text, index)
     if first < 0x80'u8:
       inc index
-      result.addDecoded(uint32(first), start, index)
+      result.addDecoded(uint32(first), start)
     elif (first and 0xE0'u8) == 0xC0'u8:
       if first < 0xC2'u8:
         raise newException(ValueError, "malformed UTF-8: overlong sequence")
       let codepoint =
         ((uint32(first and 0x1F'u8) shl 6) or continuationValue(text, index + 1))
       index += 2
-      result.addDecoded(codepoint, start, index)
+      result.addDecoded(codepoint, start)
     elif (first and 0xF0'u8) == 0xE0'u8:
       let second = continuationValue(text, index + 1)
       let codepoint = (
@@ -738,7 +748,7 @@ proc decodeUtf8(text: string): DecodedText =
       if codepoint < 0x800'u32:
         raise newException(ValueError, "malformed UTF-8: overlong sequence")
       index += 3
-      result.addDecoded(codepoint, start, index)
+      result.addDecoded(codepoint, start)
     elif (first and 0xF8'u8) == 0xF0'u8:
       let codepoint = (
         (uint32(first and 0x07'u8) shl 18) or (
@@ -749,9 +759,23 @@ proc decodeUtf8(text: string): DecodedText =
       if codepoint < 0x10000'u32:
         raise newException(ValueError, "malformed UTF-8: overlong sequence")
       index += 4
-      result.addDecoded(codepoint, start, index)
+      result.addDecoded(codepoint, start)
     else:
       raise newException(ValueError, "malformed UTF-8: invalid leading byte")
+
+  result.byteOffsets.add text.len
+
+func byteStart(decoded: DecodedText, index: int): int {.inline.} =
+  if decoded.byteOffsets.len == 0:
+    index
+  else:
+    decoded.byteOffsets[index]
+
+func byteEnd(decoded: DecodedText, index: int): int {.inline.} =
+  if decoded.byteOffsets.len == 0:
+    index + 1
+  else:
+    decoded.byteOffsets[index + 1]
 
 func toFriBidiPar(direction: ParagraphDirection): fribidi_raw.FriBidiParType =
   case direction
@@ -809,8 +833,15 @@ proc defaultLanguageForScript*(script: Script): Language =
   else:
     defaultLanguage()
 
-proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
-  let decoded = decodeUtf8(text)
+func simpleLatinParagraph(codepoints: openArray[Codepoint]): bool =
+  # Printable ASCII and U+00C0..U+00FF have no RTL letters, Arabic numbers,
+  # or directional controls. In an LTR paragraph all resolve to level zero.
+  for codepoint in codepoints:
+    if codepoint notin 0x20'u32 .. 0x7e'u32 and codepoint notin 0xc0'u32 .. 0xff'u32:
+      return false
+  true
+
+proc analyzeBidi(decoded: DecodedText, options: ParagraphOptions): BidiAnalysis =
   if options.bidiMode == BidiMode.singleDirection and
       options.baseDirection == ParagraphDirection.autoDetect:
     raise newException(
@@ -842,32 +873,43 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
           newException(FriBidiLoadError, "FriBidi is not loaded; call loadFribidi()")
 
     let length = checkedCint(decoded.codepoints.len, "codepoint count")
-    var bidiTypes = newSeq[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
-    var bracketTypes = newSeq[fribidi_raw.FriBidiBracketType](decoded.codepoints.len)
-    var base = options.baseDirection.toFriBidiPar
+    if options.baseDirection != ParagraphDirection.rtl and
+        simpleLatinParagraph(decoded.codepoints):
+      result.baseDirection = Direction.ltr
+    else:
+      var bidiTypes = newSeqUninit[fribidi_raw.FriBidiCharType](decoded.codepoints.len)
+      var bracketTypes =
+        newSeqUninit[fribidi_raw.FriBidiBracketType](decoded.codepoints.len)
+      var base = options.baseDirection.toFriBidiPar
 
-    fribidi_raw.fribidi_get_bidi_types(
-      unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0]
-    )
-    fribidi_raw.fribidi_get_bracket_types(
-      unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0], addr bracketTypes[0]
-    )
-    let maxLevel = fribidi_raw.fribidi_get_par_embedding_levels_ex(
-      addr bidiTypes[0], addr bracketTypes[0], length, addr base, addr levels[0]
-    )
-    if maxLevel == 0:
-      raise newException(ValueError, "FriBidi could not resolve embedding levels")
-    result.baseDirection = base.baseDirection
+      fribidi_raw.fribidi_get_bidi_types(
+        unsafeAddr decoded.codepoints[0], length, addr bidiTypes[0]
+      )
+      fribidi_raw.fribidi_get_bracket_types(
+        unsafeAddr decoded.codepoints[0],
+        length,
+        addr bidiTypes[0],
+        addr bracketTypes[0],
+      )
+      let maxLevel = fribidi_raw.fribidi_get_par_embedding_levels_ex(
+        addr bidiTypes[0], addr bracketTypes[0], length, addr base, addr levels[0]
+      )
+      if maxLevel == 0:
+        raise newException(ValueError, "FriBidi could not resolve embedding levels")
+      result.baseDirection = base.baseDirection
   var first = 0
   while first < levels.len:
     var runScript = scriptFor(decoded.codepoints[first])
     var last = first + 1
     while last < levels.len and levels[last] == levels[first]:
-      let nextScript = scriptFor(decoded.codepoints[last])
-      if runScript.scriptIsNeutral:
-        runScript = nextScript
-      elif not nextScript.scriptIsNeutral and nextScript.toRaw != runScript.toRaw:
-        break
+      # ASCII contains only Latin and Common scripts. Once the run is Latin,
+      # either script can be included without a Unicode script lookup.
+      if runScript.toRaw != HB_SCRIPT_LATIN or decoded.codepoints[last] >= 128:
+        let nextScript = scriptFor(decoded.codepoints[last])
+        if runScript.scriptIsNeutral:
+          runScript = nextScript
+        elif not nextScript.scriptIsNeutral and nextScript.toRaw != runScript.toRaw:
+          break
       inc last
     if runScript.toRaw == HB_SCRIPT_UNKNOWN:
       runScript = inferScript(decoded.codepoints, first, last)
@@ -877,8 +919,8 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
       else:
         defaultLanguageForScript(runScript)
     result.runs.add TextRun(
-      byteStart: decoded.byteStarts[first],
-      byteEnd: decoded.byteEnds[last - 1],
+      byteStart: decoded.byteStart(first),
+      byteEnd: decoded.byteEnd(last - 1),
       codepointStart: first,
       codepointEnd: last,
       direction: levels[first].levelDirection,
@@ -890,7 +932,7 @@ proc analyzeBidi(text: string, options: ParagraphOptions): BidiAnalysis =
     first = last
 
 proc bidiRuns*(text: string, options = ParagraphOptions()): seq[TextRun] =
-  analyzeBidi(text, options).runs
+  analyzeBidi(decodeUtf8(text), options).runs
 
 proc reverseRange[T](values: var seq[T], first, last: int) =
   var left = first
@@ -1661,7 +1703,7 @@ proc execute*(
 proc shaper*(plan: ShapePlan): string =
   fromCString(hb_shape_plan_get_shaper(plan.requirePlan))
 
-proc toGlyphRun*(buffer: Buffer): GlyphRun =
+proc glyphRunFromBuffer(buffer: Buffer, clusterOffset: uint32): GlyphRun =
   var infoLength: cuint
   let infos = cast[ptr UncheckedArray[hb_glyph_info_t]](hb_buffer_get_glyph_infos(
     buffer.requireBuffer, addr infoLength
@@ -1674,7 +1716,7 @@ proc toGlyphRun*(buffer: Buffer): GlyphRun =
   if infoLength != positionLength:
     raise newException(ValueError, "HarfBuzz glyph info and position lengths differ")
 
-  result.glyphs = newSeq[Glyph](int(infoLength))
+  result.glyphs = newSeqUninit[Glyph](int(infoLength))
   if result.glyphs.len > 0:
     if infos == nil:
       raise newException(ValueError, "HarfBuzz returned null glyph info data")
@@ -1684,13 +1726,16 @@ proc toGlyphRun*(buffer: Buffer): GlyphRun =
   for i in 0 ..< result.glyphs.len:
     result.glyphs[i] = Glyph(
       codepoint: infos[i].codepoint,
-      cluster: infos[i].cluster,
+      cluster: infos[i].cluster + clusterOffset,
       flags: infos[i].mask and uint32(HB_GLYPH_FLAG_DEFINED),
       xAdvance: positions[i].x_advance,
       yAdvance: positions[i].y_advance,
       xOffset: positions[i].x_offset,
       yOffset: positions[i].y_offset,
     )
+
+proc toGlyphRun*(buffer: Buffer): GlyphRun =
+  glyphRunFromBuffer(buffer, 0)
 
 proc shapeText*(font: Font, text: string, options = ShapeOptions()): GlyphRun =
   var buffer = initBuffer()
@@ -1741,7 +1786,14 @@ proc shapeRun*(
     raise newException(ValueError, "text run byte start does not fit glyph clusters")
 
   var buffer = initBuffer()
-  buffer.addUtf8(text[run.byteStart ..< run.byteEnd])
+  let length = checkedCint(run.byteEnd - run.byteStart, "text length")
+  # Keep run-local clusters and shaping context while borrowing the original bytes.
+  let data =
+    if length == 0:
+      cstring("")
+    else:
+      cast[cstring](addr text[run.byteStart])
+  hb_buffer_add_utf8(buffer.requireBuffer, data, length, 0, length)
   buffer.setDirection(run.direction)
   if run.script.shouldSetScript:
     buffer.setScript(run.script)
@@ -1755,10 +1807,8 @@ proc shapeRun*(
   let features = if run.features.len > 0: run.features else: options.features
   shapeFull(font, buffer, features, options.shapers)
 
-  result = ShapedRun(textRun: run, glyphRun: buffer.toGlyphRun())
-  let clusterOffset = uint32(run.byteStart)
-  for glyph in result.glyphRun.glyphs.mitems:
-    glyph.cluster += clusterOffset
+  result =
+    ShapedRun(textRun: run, glyphRun: glyphRunFromBuffer(buffer, uint32(run.byteStart)))
 
 proc shapeRun*(
     typeface: Typeface, text: string, run: TextRun, options = ShapeOptions()
@@ -1808,34 +1858,43 @@ proc supportsRun(typeface: Typeface, decoded: DecodedText, run: TextRun): bool =
       return false
   true
 
-proc supportedPrefixEnd(
-    typefaces: openArray[Typeface],
-    typefaceIndex: int,
-    decoded: DecodedText,
-    first, ending: int,
+const
+  NoFace = -1
+  NoGlyphRequired = -2
+
+type CoverageCache = array[128, tuple[key: uint32, face: int]]
+
+proc preferredFace(
+    cache: var CoverageCache, faces: openArray[Typeface], codepoint: Codepoint
 ): int =
-  ## Extends a segment while the selected face covers it and no preferred
-  ## (earlier) face does, so fallback faces only cover what the primary lacks.
-  result = first
-  while result < ending:
-    let codepoint = decoded.codepoints[result]
-    if codepointNeedsGlyph(codepoint):
-      if not typefaces[typefaceIndex].font.hasGlyph(codepoint):
-        return
-      for preferred in 0 ..< typefaceIndex:
-        if typefaces[preferred].font.hasGlyph(codepoint):
-          return
-    inc result
+  # Valid Unicode scalars fit in 21 bits. Adding one reserves zero for an empty entry.
+  let key = uint32(codepoint) + 1
+  let slot = int(codepoint and uint32(cache.high))
+  if cache[slot].key == key:
+    return cache[slot].face
+  result = NoGlyphRequired
+  if codepointNeedsGlyph(codepoint):
+    result = NoFace
+    for index, face in faces:
+      if face.font.hasGlyph(codepoint):
+        result = index
+        break
+  cache[slot] = (key, result)
 
 proc sliceTextRun(run: TextRun, decoded: DecodedText, first, ending: int): TextRun =
   result = run
-  result.byteStart = decoded.byteStarts[first]
-  result.byteEnd = decoded.byteEnds[ending - 1]
+  result.byteStart = decoded.byteStart(first)
+  result.byteEnd = decoded.byteEnd(ending - 1)
   result.codepointStart = first
   result.codepointEnd = ending
 
 proc selectTypefaceSegment(
-    context: ShapeContext, text: string, decoded: DecodedText, run: TextRun, first: int
+    context: ShapeContext,
+    text: string,
+    decoded: DecodedText,
+    run: TextRun,
+    first: int,
+    cache: var CoverageCache,
 ): tuple[typefaceIndex, ending: int] =
   if context.typefaces.len == 0:
     raise newException(ValueError, "shape context requires at least one typeface")
@@ -1846,38 +1905,35 @@ proc selectTypefaceSegment(
     result.ending = run.codepointEnd
     return
 
-  var required = first
-  while required < run.codepointEnd and
-      not codepointNeedsGlyph(decoded.codepoints[required]):
-    inc required
-  if required == run.codepointEnd:
-    return (0, run.codepointEnd)
+  var index = first
+  while index < run.codepointEnd:
+    let face = cache.preferredFace(context.typefaces, decoded.codepoints[index])
+    inc index
+    if face == NoFace:
+      return (0, index)
+    if face >= 0:
+      while index < run.codepointEnd:
+        let next = cache.preferredFace(context.typefaces, decoded.codepoints[index])
+        if next != face and next != NoGlyphRequired:
+          break
+        inc index
+      return (face, index)
+  (0, index)
 
-  result.typefaceIndex = 0
-  for index, typeface in context.typefaces:
-    if typeface.font.hasGlyph(decoded.codepoints[required]):
-      result.typefaceIndex = index
-      result.ending =
-        context.typefaces.supportedPrefixEnd(index, decoded, first, run.codepointEnd)
-      return
-  result.ending = required + 1
+func runShapeOptions(options: ParagraphOptions): ShapeOptions =
+  # Each TextRun already carries its direction, script, language and features.
+  ShapeOptions(
+    flags: options.flags, shapers: options.shapers, clusterLevel: options.clusterLevel
+  )
 
 proc shapeParagraph*(
     font: Font, text: string, options = ParagraphOptions()
 ): ShapedParagraph =
-  let analysis = analyzeBidi(text, options)
+  let analysis = analyzeBidi(decodeUtf8(text), options)
   result.baseDirection = analysis.baseDirection
   result.logicalRuns = newSeq[ShapedRun](analysis.runs.len)
+  let shapeOptions = runShapeOptions(options)
   for index, run in analysis.runs:
-    let shapeOptions = initShapeOptions(
-      features = run.features,
-      direction = run.direction,
-      script = run.script,
-      language = run.language,
-      flags = options.flags,
-      shapers = options.shapers,
-      clusterLevel = options.clusterLevel,
-    )
     result.logicalRuns[index] = shapeRun(font, text, run, shapeOptions)
 
   let visualIndices = visualOrderIndices(analysis.runs)
@@ -1891,27 +1947,20 @@ proc shapeParagraph*(
   shapeParagraph(typeface.font, text, options)
 
 proc shapeParagraph*(context: ShapeContext, text: string): ShapedParagraph =
-  let analysis = analyzeBidi(text, context.options)
   let decoded = decodeUtf8(text)
+  let analysis = analyzeBidi(decoded, context.options)
   result.baseDirection = analysis.baseDirection
+  let shapeOptions = runShapeOptions(context.options)
+  var coverage: CoverageCache
   var logicalTextRuns: seq[TextRun]
   for run in analysis.runs:
     var first = run.codepointStart
     while first < run.codepointEnd:
-      let selection = context.selectTypefaceSegment(text, decoded, run, first)
+      let selection = context.selectTypefaceSegment(text, decoded, run, first, coverage)
       let segment = run.sliceTextRun(decoded, first, selection.ending)
-      let shapeOptions = initShapeOptions(
-        features = segment.features,
-        direction = segment.direction,
-        script = segment.script,
-        language = segment.language,
-        flags = context.options.flags,
-        shapers = context.options.shapers,
-        clusterLevel = context.options.clusterLevel,
-      )
       var shaped =
         shapeRun(context, text, segment, selection.typefaceIndex, shapeOptions)
-      if shaped.hasMissingGlyphs:
+      if context.typefaces.len > 1 and shaped.hasMissingGlyphs:
         for fallbackIndex, typeface in context.typefaces:
           if fallbackIndex != selection.typefaceIndex and
               typeface.supportsRun(decoded, segment):
@@ -1983,10 +2032,10 @@ proc glyphRangeForCodepoint*(
   let decoded = decodeUtf8(text)
   if codepointIndex < run.textRun.codepointStart or
       codepointIndex >= run.textRun.codepointEnd or
-      codepointIndex >= decoded.byteStarts.len:
+      codepointIndex >= decoded.codepoints.len:
     raise newException(ValueError, "codepoint index is outside the shaped run")
   glyphRangeForByteRange(
-    run, decoded.byteStarts[codepointIndex], decoded.byteEnds[codepointIndex]
+    run, decoded.byteStart(codepointIndex), decoded.byteEnd(codepointIndex)
   )
 
 func sameTextRun(a, b: TextRun): bool =
