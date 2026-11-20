@@ -1,5 +1,7 @@
 import std/[os, sequtils, strutils, unittest]
 
+from std/unicode import Rune, toUTF8, runes
+
 import harfbuzzy
 import harfbuzzy/fribidi_raw
 import harfbuzzy/raw
@@ -362,6 +364,72 @@ suite "harfbuzzy wrapper":
     expect ValueError:
       discard bidiRuns("\xFF")
 
+  test "shaping a borrowed byte range preserves run-local features and absolute clusters":
+    let
+      font = typefaceFromFile(fixtureFont).font
+      prefix = "אב"
+      body = "AV fi\0AV"
+      text = prefix & body & "suffix"
+      options = initShapeOptions(features = [toFeature("kern[1:4]=0")])
+      local = TextRun(byteEnd: body.len, direction: Direction.ltr, script: scriptLatin)
+      expected = font.shapeRun(body, local, options)
+    var slice = local
+    slice.byteStart = prefix.len
+    slice.byteEnd += prefix.len
+    let actual = font.shapeRun(text, slice, options)
+    require actual.len == expected.len
+    for index, glyph in expected.glyphRun.glyphs:
+      var shifted = glyph
+      shifted.cluster += uint32(prefix.len)
+      check actual.glyphRun.glyphs[index] == shifted
+    slice.byteStart = text.len
+    slice.byteEnd = text.len
+    check font.shapeRun(text, slice, options).len == 0
+
+  test "paragraph levels match FriBidi across Latin blocks and directional boundaries":
+    var printable = ""
+    for cp in 0x20 .. 0x7e:
+      printable.add char(cp)
+    for cp in 0xc0 .. 0xff:
+      printable.add Rune(cp).toUTF8
+    for text in [
+      printable,
+      "12 ($3.40) 456",
+      "a".repeat(15) & hebrewText & "123 b".repeat(5),
+      "a".repeat(16) & "\u2067" & arabicText & "\u2069",
+      "a".repeat(17) & "\u202e987\u202c",
+    ]:
+      var codepoints: seq[uint32]
+      for rune in text.runes:
+        codepoints.add uint32(rune)
+      for direction in [
+        ParagraphDirection.autoDetect, ParagraphDirection.ltr, ParagraphDirection.rtl
+      ]:
+        var
+          types = newSeq[FriBidiCharType](codepoints.len)
+          brackets = newSeq[FriBidiBracketType](codepoints.len)
+          levels = newSeq[FriBidiLevel](codepoints.len)
+          base =
+            case direction
+            of ParagraphDirection.autoDetect: FRIBIDI_PAR_ON
+            of ParagraphDirection.ltr: FRIBIDI_PAR_LTR
+            of ParagraphDirection.rtl: FRIBIDI_PAR_RTL
+        let count = cint(codepoints.len)
+        fribidi_get_bidi_types(addr codepoints[0], count, addr types[0])
+        fribidi_get_bracket_types(
+          addr codepoints[0], count, addr types[0], addr brackets[0]
+        )
+        require fribidi_get_par_embedding_levels_ex(
+          addr types[0], addr brackets[0], count, addr base, addr levels[0]
+        ) != 0
+        var covered = 0
+        for run in bidiRuns(text, initParagraphOptions(baseDirection = direction)):
+          check run.codepointStart == covered
+          for index in run.codepointStart ..< run.codepointEnd:
+            check run.level.levelValue == int(levels[index])
+          covered = run.codepointEnd
+        check covered == codepoints.len
+
   test "unknown script option lets HarfBuzz infer complex script properties":
     var buffer = initBuffer()
     buffer.addUtf8("क्ष")
@@ -475,6 +543,22 @@ suite "harfbuzzy wrapper":
         check paragraph.logicalRuns[1].textRun.codepointEnd == 5
         check not paragraph.logicalRuns[1].hasMissingGlyphs
 
+  test "fallback coverage distinguishes colliding codepoints and respects face order":
+    let primary = typefaceFromFile(
+      currentSourcePath().parentDir / "fixtures" / "outlines" / "quadratic.ttf"
+    )
+    let fallback = typefaceFromFile(fixtureFont)
+    if fallback.font.hasGlyph(0xc1) and fallback.font.hasGlyph(0x41):
+      let text = "AÁ".repeat(8)
+      let alternating = initShapeContext(primary, [fallback]).shapeParagraph(text)
+      require alternating.logicalRuns.len == 16
+      for index, run in alternating.logicalRuns:
+        check run.typefaceIndex == index mod 2
+        check run.textRun.codepointStart == index
+      let covered = initShapeContext(fallback, [primary]).shapeParagraph(text)
+      require covered.logicalRuns.len == 1
+      check covered.logicalRuns[0].typefaceIndex == 0
+
   test "font fallback callback can override selection":
     proc chooseFallback(text: string, run: TextRun, typefaces: seq[Typeface]): int =
       discard text
@@ -535,6 +619,35 @@ suite "harfbuzzy wrapper":
     for bad in ["\x80", "\xC0\x80", "\xE0\x80\x80", "\xF0\x80\x80\x80", "\xED\xA0\x80"]:
       expect ValueError:
         discard bidiRuns(bad)
+
+  test "paragraph byte and codepoint ranges agree for ASCII and mixed text":
+    let typeface = typefaceFromFile(fixtureFont)
+    let context = initShapeContext(typeface)
+    for length in [15, 16, 17, 31, 32, 33]:
+      let
+        ascii = "0123456789abcdefghijklmnopqrstuvwxyz"[0 ..< length]
+        paragraph = context.shapeParagraph(ascii)
+      require paragraph.logicalRuns.len == 1
+      let run = paragraph.logicalRuns[0]
+      check run.textRun.byteStart == 0
+      check run.textRun.byteEnd == length
+      check run.textRun.codepointEnd == length
+      for index in 0 ..< length:
+        let glyphs = run.glyphRangeForCodepoint(ascii, index)
+        check glyphs == run.glyphRangeForByte(index)
+        check glyphs.glyphEnd > glyphs.glyphStart
+      expect ValueError:
+        discard run.glyphRangeForCodepoint(ascii, length)
+
+      let mixedText = ascii & hebrewText
+      let runs = bidiRuns(mixedText)
+      require runs.len == 2
+      check runs[1].byteStart == length
+      check runs[1].byteEnd == mixedText.len
+      check runs[1].codepointStart == length
+      check runs[1].codepointEnd == length + 4
+      expect ValueError:
+        discard bidiRuns(ascii & "\xC3")
 
   test "subset input owns only the input, not its borrowed sets":
     check fileExists(fixtureFont)
