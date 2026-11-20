@@ -125,6 +125,12 @@ require HarfBuzz 7.0 or newer, and remain valid after the font is released.
 
 ## Build
 
+The experimental `harfnim` Atlas feature enables
+`import harfbuzzy/harfnim_backend` for shaping, paragraph bidi, font fallback,
+and glyph outlines with Nim. It shares the paragraph API with `harfbuzzy`.
+The standard `harfbuzzy` module remains the entry point for the HarfBuzz
+bindings and subsetting.
+
 Install dependencies with Atlas:
 
 ```sh

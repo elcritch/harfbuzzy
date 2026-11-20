@@ -11,3 +11,5 @@ feature "static":
   discard
 feature "runtime":
   discard
+feature "harfnim":
+  requires "https://github.com/elcritch/harfnim#feat/figdraw-backend"
