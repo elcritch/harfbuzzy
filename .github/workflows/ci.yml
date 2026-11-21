@@ -262,6 +262,12 @@ jobs:
             --out:tests/harfbuzzy-static-feature.exe tests/tharfbuzzy.nim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Test the optional Pixie layout adapter
+        if: runner.os == 'Linux'
+        run: |
+          atlas install --features:pixie
+          nim c -r -d:release tests/tpixie_layout.nim
+
   test-mingw:
     name: Windows MinGW dynlib
     runs-on: windows-2022

@@ -11,3 +11,7 @@ feature "static":
   discard
 feature "runtime":
   discard
+
+feature "pixie":
+  requires "pixie >= 5.0.1"
+  requires "vmath"

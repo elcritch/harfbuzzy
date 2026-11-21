@@ -98,7 +98,43 @@ uses ordered fallback typefaces for maximal covered segments.
 `ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
 to glyph-range helpers for editor and layout integrations.
 
-## Shared layout storage
+## Paragraph layout
+
+`harfbuzzy/typesetting` wraps and positions HarfBuzz-shaped text in pixels.
+It handles CR, LF and CRLF paragraph boundaries, bidi line ordering, font
+fallback, indents, spacing, alignment, and greedy or optimal line breaking.
+The result includes positioned glyphs, line ranges, source byte and rune
+ranges, and bounds.
+
+```nim
+import harfbuzzy
+import harfbuzzy/typesetting
+
+let context = initShapeContext(typefaceFromFile("font.ttf"))
+let text = context.layoutText("A paragraph to wrap and justify.", 16,
+  ParagraphLayoutOptions(width: 240, style: ParagraphStyle(
+    align: paJustify, lineBreaking: plbOptimal,
+  )),
+)
+for glyph in text.arrangedGlyphs:
+  echo glyph.fontId, " ", glyph.glyphId, " ", glyph.pos
+```
+
+Pass a `hyphenation` callback in `ParagraphLayoutOptions` and enable
+`style.hyphenate` to use dictionary hyphenation. The optional dictionary data
+can be loaded with `harfbuzzy/hyphenation`, which supports Liang patterns in
+TeX and LibreOffice formats. Soft hyphens are handled during wrapping.
+
+### Pixie layout
+
+Enable the `pixie` feature with `atlas install --features:pixie` or depend on
+`gh:elcritch/harfbuzzy[pixie]`. Import `harfbuzzy/pixie` for the
+`layoutText(font, text, options)` and `layoutText(spans, options)` overloads.
+They take Pixie fonts or spans and return the same layout representation.
+Default styles use Pixie's wrapping. Styled paragraphs use the shared
+line breaker. Glyph IDs are Pixie rune values.
+
+### Shared layout storage
 
 `import harfbuzzy/layout` provides `TextLayout[Glyph, Source, Point, Bounds]`
 for adapters that place shaped glyphs. It stores glyphs, line ranges, source
