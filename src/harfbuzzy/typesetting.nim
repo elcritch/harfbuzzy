@@ -81,6 +81,7 @@ proc layoutText*(
   ## Positions glyphs in pixel units. Glyph IDs index the selected typeface in
   ## `context.typefaces`. Source ranges refer to the original UTF-8 string.
   ## Clusters use monotone grapheme boundaries for wrapping and selection.
+  ## Fallback runs share a line baseline. `pos` includes HarfBuzz's glyph offsets.
   if context.typefaces.len == 0:
     raise newException(ValueError, "layout requires at least one typeface")
   if not (fontSize > 0 and fontSize < float32.high):
@@ -114,6 +115,11 @@ proc layoutText*(
       let metrics = fontMetrics[run.typefaceIndex]
       for (first, after, start, stop) in run.clusters:
         let
+          # HarfBuzz marks the start of the later cluster in logical order.
+          boundaryGlyph = if run.textRun.direction == Direction.rtl: first else: after
+          clusterBreak =
+            after == run.glyphRun.glyphs.len or
+            (run.glyphRun.glyphs[boundaryGlyph].flags and UnsafeToBreak) == 0
           runeStart = offsets.lowerBound(start)
           runeEnd = offsets.lowerBound(stop)
           source = GlyphSourceRange(
@@ -149,10 +155,9 @@ proc layoutText*(
             pos: pos,
             advance: advance,
             offset: offset,
-            rect: rect(pos.x, pos.y - metrics.baseline, abs(advance.x), metrics.height),
+            rect: rect(pen.x, pen.y, abs(advance.x), metrics.height),
           )
-          safe.add i + 1 == run.glyphRun.glyphs.len or
-            (run.glyphRun.glyphs[i + 1].flags and UnsafeToBreak) == 0
+          safe.add i + 1 == after and clusterBreak
           pen += advance
 
     if result.arrangedGlyphs.len == firstGlyph:
@@ -190,4 +195,4 @@ proc layoutText*(
     except ValueError:
       discard
 
-  result.finishLayout(paragraphs, safe, options, hyphen)
+  result.finishLayout(paragraphs, safe, options, hyphen, alignFontBaselines = true)

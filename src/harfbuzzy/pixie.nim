@@ -8,12 +8,30 @@ import ./private/positionedlayout
 
 export layout
 
+func glyphGeometry(
+    arrangement: px.Arrangement, index: int
+): tuple[pos: LayoutPoint, selection: LayoutRect] =
+  let
+    pos = arrangement.positions[index]
+    selection = arrangement.selectionRects[index]
+  (
+    positionedlayout.vec2(pos.x, pos.y),
+    rect(selection.x, selection.y, selection.w, selection.h),
+  )
+
+func hasSoftWrap(arrangement: px.Arrangement): bool =
+  for i in 0 ..< arrangement.lines.high:
+    let (first, last) = arrangement.lines[i]
+    if last < first or arrangement.runes[last] != Rune('\n'):
+      return true
+
 proc layoutText*(
     spans: openArray[px.Span], options = ParagraphLayoutOptions()
 ): PositionedText =
   ## Glyph IDs are Pixie rune values. Font IDs index the input spans, including
   ## spans that contain only filtered controls. Native Pixie wrapping is used
   ## for default paragraph styles; styled paragraphs use the shared breaker.
+  ## Intrinsic sizes are measured before viewport wrapping and alignment.
   for span in spans:
     if span.isNil or span.font.isNil or span.font.typeface.isNil:
       raise newException(ValueError, "Pixie layout requires a font for each span")
@@ -32,7 +50,7 @@ proc layoutText*(
     of Top: px.TopAlign
     of Middle: px.MiddleAlign
     of Bottom: px.BottomAlign
-  let arrangement =
+  let positioned =
     if styled:
       px.typeset(spans, wrap = false)
     else:
@@ -43,6 +61,15 @@ proc layoutText*(
         vertical,
         options.wrap,
       )
+  # Pixie rounds selection boxes after wrapping and alignment. Measure the
+  # original paragraph geometry if either operation can change those boxes.
+  let arrangement =
+    if not styled and positioned.runes.len > 0 and (
+      horizontal != px.LeftAlign or vertical != px.TopAlign or positioned.hasSoftWrap()
+    ):
+      px.typeset(spans, wrap = false)
+    else:
+      positioned
 
   var
     sourceByte = 0
@@ -61,8 +88,7 @@ proc layoutText*(
           raise newException(ValueError, "Pixie glyphs do not match the source spans")
         let
           display = arrangement.runes[displayIndex]
-          pos = arrangement.positions[displayIndex]
-          selection = arrangement.selectionRects[displayIndex]
+          (pos, selection) = arrangement.glyphGeometry(displayIndex)
         result.appendGlyph LayoutGlyph(
           fontId: fontId,
           glyphId: display.uint32,
@@ -74,9 +100,9 @@ proc layoutText*(
           ),
           rune: display,
           isWhitespace: display.isSpaceRune,
-          pos: positionedlayout.vec2(pos.x, pos.y),
+          pos: pos,
           advance: positionedlayout.vec2(selection.w, 0),
-          rect: rect(selection.x, selection.y, selection.w, selection.h),
+          rect: selection,
         )
         inc displayIndex
       inc sourceRune
@@ -104,9 +130,17 @@ proc layoutText*(
 
     result.finishLayout(paragraphs, [], options, hyphen)
   else:
-    for paragraph in paragraphs:
-      result.lines.add paragraph.glyphs
     result.measureParagraphs(paragraphs)
+    if positioned != arrangement:
+      for i, glyph in result.arrangedGlyphs.mpairs:
+        let (pos, selection) = positioned.glyphGeometry(i)
+        glyph.pos = pos
+        glyph.rect = selection
+        glyph.advance.x = selection.w
+        result.positions[i] = pos
+        result.selectionRects[i] = selection
+    for (first, last) in positioned.lines:
+      result.lines.add first .. last
     result.bounding = result.calcMinMaxContent().bounding
 
 proc layoutText*(

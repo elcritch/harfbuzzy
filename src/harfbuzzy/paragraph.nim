@@ -181,17 +181,27 @@ proc orderLogically[Record](
         if result == 0:
           result = cmp(a.visualKey, b.visualKey)
     )
-    # A logical neighbor pair is shaping-safe where it is visually adjacent
-    # and HarfBuzz marked that visual boundary safe.
-    for index in range.a ..< range.b:
-      let
-        here = int(records[index].visualKey)
-        next = int(records[index + 1].visualKey)
-      result[index] =
-        if abs(here - next) == 1:
-          visualSafe[min(here, next)]
-        else:
-          true
+    # A boundary can adjoin a multi-glyph cluster in either visual order.
+    # Use the visual endpoints of both clusters to recover the flag.
+    var
+      first = range.a
+      previousFirst, previousLast = -1
+    for last in range:
+      if last == range.b or records[last].glyph.source != records[last + 1].glyph.source:
+        let
+          visualFirst = int(records[first].visualKey)
+          visualLast = int(records[last].visualKey)
+        if first > range.a:
+          result[first - 1] =
+            if previousLast + 1 == visualFirst:
+              visualSafe[previousLast]
+            elif visualLast + 1 == previousFirst:
+              visualSafe[visualLast]
+            else:
+              true
+        previousFirst = visualFirst
+        previousLast = visualLast
+        first = last + 1
     result[range.b] = true
   arrangement.recompose(records)
 

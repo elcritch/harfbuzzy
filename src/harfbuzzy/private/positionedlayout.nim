@@ -62,6 +62,9 @@ proc recompose*(text: var PositionedText, records: openArray[PositionedRecord]) 
     text.selectionRects[i] = record.selection
     text.runes.add record.glyph.rune
 
+func baseline(glyph: LayoutGlyph): float32 =
+  glyph.pos.y - glyph.rect.y - glyph.offset.y
+
 func withHyphen*(
     base: PositionedRecord,
     hyphen: PositionedHyphen,
@@ -74,7 +77,7 @@ func withHyphen*(
   result.glyph.isWhitespace = false
   result.glyph.advance = vec2(hyphen.advance, 0)
   result.glyph.offset = vec2(0, 0)
-  result.glyph.pos = vec2(selection.x, base.glyph.pos.y)
+  result.glyph.pos = vec2(selection.x, selection.y + base.glyph.baseline())
   result.glyph.rect = rect(selection.x, selection.y, hyphen.advance, selection.h)
   result.selection = result.glyph.rect
   result.visualKey = visualKey
@@ -94,8 +97,28 @@ func calcMinMaxContent*(text: PositionedText): tuple[bounding: LayoutRect] =
     bottom = max(bottom, glyph.rect.y + glyph.rect.h)
   result.bounding = rect(left, top, right - left, bottom - top)
 
+func lineMetrics(
+    text: PositionedText, glyphs: Slice[int]
+): tuple[ascent, descent: float32] =
+  for i in glyphs:
+    let
+      glyph = text.arrangedGlyphs[i]
+      ascent = glyph.baseline()
+    result.ascent = max(result.ascent, ascent)
+    result.descent = max(result.descent, glyph.rect.h - ascent)
+
+proc alignBaselines(text: var PositionedText) =
+  for line in text.lines:
+    let (ascent, descent) = text.lineMetrics(line)
+    for i in line:
+      let glyph = addr text.arrangedGlyphs[i]
+      glyph.pos.y = glyph.rect.y + ascent + glyph.offset.y
+      glyph.rect.h = ascent + descent
+
 proc measureParagraphs*(
-    text: var PositionedText, paragraphs: openArray[LayoutParagraph]
+    text: var PositionedText,
+    paragraphs: openArray[LayoutParagraph],
+    alignFontBaselines = false,
 ) =
   ## Intrinsic widths before wrapping. The minimum is the widest unbroken word.
   for paragraph in paragraphs:
@@ -117,6 +140,9 @@ proc measureParagraphs*(
         text.minSize.x = max(text.minSize.x, word)
         if glyph.rune.canBreakAfterRune:
           word = 0
+    if alignFontBaselines:
+      let (ascent, descent) = text.lineMetrics(paragraph.glyphs)
+      height = ascent + descent
     let indent = paragraph.style.firstLineIndent + paragraph.style.tailIndent
     text.maxSize.x = max(text.maxSize.x, width + indent)
     text.maxSize.y += height
@@ -128,11 +154,14 @@ proc finishLayout*(
     safeBreakAfter: openArray[bool],
     options: ParagraphLayoutOptions,
     hyphen: proc(fontId: int): PositionedHyphen {.closure.},
+    alignFontBaselines = false,
 ) =
-  text.measureParagraphs(paragraphs)
+  text.measureParagraphs(paragraphs, alignFontBaselines)
   let lines = text.breakParagraphLines(
     paragraphs, safeBreakAfter, options.width, options.wrap, hyphen, options.hyphenation
   )
+  if alignFontBaselines:
+    text.alignBaselines()
   text.reflowParagraphLines(lines, paragraphs, options.width, options.wrap)
   text.alignParagraphLines(
     lines,

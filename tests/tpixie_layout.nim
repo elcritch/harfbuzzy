@@ -21,6 +21,24 @@ when defined(features.harfbuzzy.pixie) or defined(feature.harfbuzzy.pixie):
         check glyph.pos.x == native.positions[i].x
         check glyph.pos.y == native.positions[i].y
 
+    test "intrinsic sizes are independent of wrap width and alignment":
+      let text = "A AAAAAA A\nAAAA A A"
+      let natural = pxLayout.layoutText(font, text)
+      let narrow = pxLayout.layoutText(font, text, ParagraphLayoutOptions(width: 20))
+      let wide = pxLayout.layoutText(
+        font,
+        text,
+        ParagraphLayoutOptions(
+          width: 200, height: 200, horizontal: Right, vertical: Bottom
+        ),
+      )
+      check narrow.lines.len > natural.lines.len
+      check wide.lines == natural.lines
+      check narrow.minSize == natural.minSize
+      check narrow.maxSize == natural.maxSize
+      check wide.minSize == natural.minSize
+      check wide.maxSize == natural.maxSize
+
     test "styled layout maps original offsets across filtered and cased spans":
       font.textCase = px.UpperCase
       let spans = [px.newSpan("a", font), px.newSpan("\t", font), px.newSpan("a", font)]
