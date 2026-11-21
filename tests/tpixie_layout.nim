@@ -39,6 +39,12 @@ when defined(features.harfbuzzy.pixie) or defined(feature.harfbuzzy.pixie):
       check wide.minSize == natural.minSize
       check wide.maxSize == natural.maxSize
 
+    test "reports unpadded intrinsic widths and bounds":
+      let laid = pxLayout.layoutText(font, "A")
+      check laid.minSize == LayoutPoint(x: 11, y: 16)
+      check laid.maxSize == LayoutPoint(x: 11, y: 16)
+      check laid.bounding == LayoutRect(w: 11, h: 16)
+
     test "styled layout maps original offsets across filtered and cased spans":
       font.textCase = px.UpperCase
       let spans = [px.newSpan("a", font), px.newSpan("\t", font), px.newSpan("a", font)]

@@ -29,6 +29,13 @@ suite "standalone HarfBuzzy layout":
       check glyph.source.byteEnd == glyph.source.runeEnd
       check glyph.pos == laid.positions[i]
 
+  test "reports unpadded intrinsic widths and bounds":
+    # The fixture advances 700 units per glyph at 1000 units per em.
+    let laid = context.layoutText("A AA", 20)
+    check laid.minSize == LayoutPoint(x: 28, y: 20)
+    check laid.maxSize == LayoutPoint(x: 56, y: 20)
+    check laid.bounding == LayoutRect(w: 56, h: 20)
+
   test "uses document offsets across hard breaks and bidirectional runs":
     let text = "Aé\r\n\nשלום A"
     let laid = context.layoutText(text, 16, ParagraphLayoutOptions(width: 200))
