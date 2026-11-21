@@ -1,4 +1,4 @@
-version       = "0.7.2"
+version       = "0.7.3"
 author        = "elcritch"
 description   = "Nim bindings and wrappers for HarfBuzz."
 license       = "MIT"
@@ -11,3 +11,7 @@ feature "static":
   discard
 feature "runtime":
   discard
+
+feature "pixie":
+  requires "pixie >= 5.0.1"
+  requires "vmath"
