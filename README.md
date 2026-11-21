@@ -98,6 +98,13 @@ uses ordered fallback typefaces for maximal covered segments.
 `ShapedParagraph` also exposes logical/visual run index maps and byte/codepoint
 to glyph-range helpers for editor and layout integrations.
 
+## Shared layout storage
+
+`import harfbuzzy/layout` provides `TextLayout[Glyph, Source, Point, Bounds]`
+for adapters that place shaped glyphs. It stores glyphs, line ranges, source
+and display text, and geometry. Use your own glyph and geometry types. The
+storage module can be used without loading HarfBuzz or FriBidi.
+
 ## Glyph outlines
 
 HarfBuzzy 0.5.0 adds `font.glyphOutline(glyphId)` for renderers that need vector
